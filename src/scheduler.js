@@ -74,6 +74,7 @@ function constructTasks(
     let pData = [],
         hData = [];
     const builderArmy = ['Builder_Army_Camp', 'Reinforcement_Camp'];
+    const warnings = [];
 
     if (base === 'home') {
         // Home Village
@@ -91,9 +92,11 @@ function constructTasks(
         buildings = [],
         heroes = [],
         heroData = [],
-        tasks = [];
+        tasks = [],
+        unmappedCount = 0;
     for (let item of pData) {
         if (mapping[item.data] === undefined) {
+            unmappedCount++;
             if (DEBUG_SCHEDULER) console.log('Missing mapping', item.data);
             continue;
         }
@@ -170,15 +173,13 @@ function constructTasks(
                 let task = itemData[b]
                     .filter((item) => item.TH > 0 && item.TH <= currTH)
                     .sort((a, b) => b.level - a.level);
-                task = task
-                    .splice(0, maxBuilds[b] - currCount)
-                    .map((item) => ({
-                        id: b,
-                        level: item.level,
-                        duration: applyBoost(item.duration, builderBoost),
-                        priority: priority[b] && priori ? priority[b] : 100,
-                        iter: char,
-                    }));
+                task = task.splice(0, maxBuilds[b] - currCount).map((item) => ({
+                    id: b,
+                    level: item.level,
+                    duration: applyBoost(item.duration, builderBoost),
+                    priority: priority[b] && priori ? priority[b] : 100,
+                    iter: char,
+                }));
                 tasks.push(...task);
             } else {
                 let task = itemData[b]
@@ -323,10 +324,16 @@ function constructTasks(
         }
     }
 
-    tasks = lockPredecessors(inputData, tasks);
+    if (unmappedCount > 0) {
+        warnings.push(
+            `Warning: ${unmappedCount} building/trap(s) had unknown mappings and were skipped`,
+        );
+    }
+
+    tasks = lockPredecessors(inputData, tasks, warnings);
     const timestamp = inputData.timestamp || Math.floor(Date.now() / 1000);
 
-    return { tasks, numWorkers, timestamp };
+    return { tasks, numWorkers, timestamp, warnings };
 }
 
 function sortTasks(arr, scheme) {
@@ -350,7 +357,7 @@ function sortTasks(arr, scheme) {
     return arr;
 }
 
-function lockPredecessors(playerData, tasks) {
+function lockPredecessors(playerData, tasks, warnings = []) {
     const heroes = [
         'Barbarian_King',
         'Archer_Queen',
@@ -359,24 +366,24 @@ function lockPredecessors(playerData, tasks) {
         'Royal_Champion',
     ];
 
+    // Add indices and canonical keys to all tasks
     tasks = tasks.map((t, idx) => ({
         ...t,
         index: idx,
         worker: null,
         pred: [],
-        key: `${t.id}_${t.iter}_${t.level}`,
+        key: generateTaskKey(t.id, t.iter, t.level),
     }));
 
-    // Lock to predecessor - Buildings
+    // Lock to predecessor - Buildings (same building, previous level)
     for (const t of tasks) {
-        const pred = tasks.find(
-            (pt) => pt.key === `${t.id}_${t.iter}_${t.level - 1}`,
-        );
+        const predKey = generateTaskKey(t.id, t.iter, t.level - 1);
+        const pred = tasks.find((pt) => pt.key === predKey);
         if (pred) t.pred.push(pred.index);
     }
 
     const heroTasks = tasks.filter((t) => heroes.includes(t.id));
-    const heroHall = playerData.buildings.find((b) => b.data === 1000071); // Exisitng HH
+    const heroHall = playerData.buildings.find((b) => b.data === 1000071); // Existing HH
     const hhTask = tasks.filter((t) => t.id === 'Hero_Hall'); // To construct HH
     // Lock to predecessor - Heroes
     if (heroTasks.length > 0) {
@@ -385,18 +392,92 @@ function lockPredecessors(playerData, tasks) {
             hhLvl = heroHall.lvl;
         }
         for (const hero of heroTasks) {
-            if (hero.priority === 1) continue;
+            if (hero.priority === 1) continue; // Skip ongoing upgrades
             if (hero.HH > hhLvl) {
                 const reqTask = hhTask.find((t) => t.level === hero.HH);
-                if (!reqTask) throw new Error('Missing Hero Hall Task');
+                if (!reqTask) {
+                    // Hero Hall not in schedule - recoverable with warning
+                    warnings.push(
+                        `Warning: Hero ${hero.id} level ${hero.level} requires Hero Hall level ${hero.HH}, but Hero Hall upgrade not in schedule. Task may start prematurely.`,
+                    );
+                    continue; // Don't add predecessor, let task be scheduled anyway
+                }
                 const reqIdx = tasks.findIndex((t) => t.key === reqTask.key);
-                // const heroIdx = tasks.findIndex(t => t.key === hero.key);
-                tasks[hero.index].pred.push(tasks[reqIdx].index);
+                tasks[hero.index].pred.push(reqIdx);
             }
         }
     }
 
+    // Validate predecessor graph for cycles and issues
+    validatePredecessorGraph(tasks, warnings);
+
     return tasks;
+}
+
+/**
+ * Detects cycles in predecessor graph using DFS
+ * Non-fatal: issues warning but doesn't throw
+ * Cycles would cause infinite loop in scheduler
+ */
+function validatePredecessorGraph(tasks, warnings = []) {
+    const visited = new Set();
+    const recursionStack = new Set();
+
+    function hasCycleDFS(taskIdx) {
+        visited.add(taskIdx);
+        recursionStack.add(taskIdx);
+
+        const task = tasks[taskIdx];
+        for (const predIdx of task.pred) {
+            if (!visited.has(predIdx)) {
+                if (hasCycleDFS(predIdx)) return true;
+            } else if (recursionStack.has(predIdx)) {
+                // Cycle found
+                const cycleStart = tasks[predIdx];
+                const cycleCurrent = task;
+                warnings.push(
+                    `Error: Cycle detected in predecessor graph: ${cycleCurrent.key} -> ${cycleStart.key}. This will cause infinite loop.`,
+                );
+                return true;
+            }
+        }
+
+        recursionStack.delete(taskIdx);
+        return false;
+    }
+
+    let hasCycle = false;
+    for (let i = 0; i < tasks.length; i++) {
+        if (!visited.has(i)) {
+            if (hasCycleDFS(i)) {
+                hasCycle = true;
+                break;
+            }
+        }
+    }
+
+    if (hasCycle) {
+        warnings.push(
+            `Critical: Predecessor graph has cycles. Schedule will fail.`,
+        );
+    }
+
+    // Validate all predecessor indices are valid
+    for (const task of tasks) {
+        for (const predIdx of task.pred) {
+            if (predIdx < 0 || predIdx >= tasks.length) {
+                warnings.push(
+                    `Error: Task ${task.key} has invalid predecessor index ${predIdx}. Valid range: 0-${tasks.length - 1}`,
+                );
+            }
+        }
+    }
+
+    if (DEBUG_SCHEDULER) {
+        console.log(
+            `Predecessor graph validation: ${tasks.length} tasks, cycles=${hasCycle}`,
+        );
+    }
 }
 
 function getTimeString(epoch) {
@@ -467,7 +548,27 @@ function myScheduler(
         completed.length !== taskLength ||
         notReady.length > 0
     ) {
-        if (iterations > 100000) throw new Error('Loop overflow');
+        const MAX_ITERATIONS = 100000;
+        if (iterations > MAX_ITERATIONS) {
+            const diagnostics = {
+                iterations,
+                totalTasks: taskLength,
+                completedTasks: completed.length,
+                readyTasks: ready.length,
+                notReadyTasks: notReady.length,
+                runningTasks: running.length,
+                workers: workers.map((w) => (w ? w.key : 'idle')),
+            };
+            if (DEBUG_SCHEDULER) {
+                console.error('Loop overflow diagnostics:', diagnostics);
+            }
+            throw new Error(
+                `Scheduler loop exceeded ${MAX_ITERATIONS} iterations. ` +
+                    `Completed: ${completed.length}/${taskLength}, ` +
+                    `Ready: ${ready.length}, NotReady: ${notReady.length}. ` +
+                    `Likely cause: predecessor graph cycle or invalid time window.`,
+            );
+        }
         if (DEBUG_SCHEDULER && iterations % 1000 === 0) {
             console.log(
                 `[Iteration ${iterations}] Total: ${taskLength}, Ready: ${ready.length}, NotReady: ${notReady.length}, Running: ${running.length}, Completed: ${completed.length}`,
@@ -508,11 +609,13 @@ function myScheduler(
                 break;
 
             const currTask = ready[idx];
-            const predTask = completed.find(
-                (t) =>
-                    t.key ===
-                    `${currTask.id}_${currTask.iter}_${currTask.level - 1}`,
+            // Try to use same worker as previous level if available (deterministic affinity)
+            const predKey = generateTaskKey(
+                currTask.id,
+                currTask.iter,
+                currTask.level - 1,
             );
+            const predTask = completed.find((t) => t.key === predKey);
             if (predTask && workers[predTask.worker] === null)
                 w = predTask.worker;
             ready[idx].worker = w;
@@ -647,6 +750,222 @@ function toISOString(seconds) {
     return iso;
 }
 
+/**
+ * Validates active-time start/end strings for correctness
+ * @param {string} startTime - HH:MM format (e.g., "07:00")
+ * @param {string} endTime - HH:MM format (e.g., "23:00")
+ * @throws {Error} if invalid format
+ */
+function validateActiveTimeWindow(startTime, endTime) {
+    const timeRegex = /^\d{2}:\d{2}$/;
+    if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        throw new Error(
+            `Invalid time format. Expected HH:MM. Got startTime=${startTime}, endTime=${endTime}`,
+        );
+    }
+    const [sHour, sMin] = startTime.split(':').map(Number);
+    const [eHour, eMin] = endTime.split(':').map(Number);
+
+    if (sHour < 0 || sHour > 23 || sMin < 0 || sMin > 59) {
+        throw new Error(`Invalid startTime: ${startTime}`);
+    }
+    if (eHour < 0 || eHour > 23 || eMin < 0 || eMin > 59) {
+        throw new Error(`Invalid endTime: ${endTime}`);
+    }
+}
+
+/**
+ * Validates constructed tasks for common issues
+ * Returns array of validation warnings (non-fatal issues)
+ * Throws only for critical issues that prevent scheduling
+ */
+function validateTasks(tasks, warnings = []) {
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+        throw new Error('No tasks generated');
+    }
+
+    const seenKeys = new Set();
+    let priorityCount = 0;
+
+    for (const t of tasks) {
+        // Check for required fields
+        if (!t.id || t.level === undefined || t.duration === undefined) {
+            throw new Error(
+                `Task missing required fields: id=${t.id}, level=${t.level}, duration=${t.duration}`,
+            );
+        }
+
+        // Check for duplicate keys
+        if (seenKeys.has(t.key)) {
+            throw new Error(
+                `Duplicate task key: ${t.key}. Task keys must be unique.`,
+            );
+        }
+        seenKeys.add(t.key);
+
+        // Track priority 1 tasks (ongoing upgrades)
+        if (t.priority === 1) {
+            priorityCount++;
+            if (!t.iter) {
+                warnings.push(
+                    `Warning: Priority 1 task ${t.key} missing iter assignment`,
+                );
+            }
+        }
+
+        // Validate duration is positive
+        if (t.duration <= 0) {
+            throw new Error(
+                `Task ${t.key} has invalid duration: ${t.duration}`,
+            );
+        }
+
+        // Validate priority is in expected range
+        if (t.priority < 1 || t.priority > 100) {
+            warnings.push(
+                `Warning: Task ${t.key} has unusual priority ${t.priority}`,
+            );
+        }
+    }
+
+    if (priorityCount > 10) {
+        warnings.push(
+            `Warning: ${priorityCount} tasks marked priority 1 (ongoing). Expected < 10.`,
+        );
+    }
+
+    if (DEBUG_SCHEDULER) {
+        console.log(
+            `Task validation: ${tasks.length} tasks, ${seenKeys.size} unique keys`,
+        );
+        if (warnings.length > 0) {
+            console.log('Validation warnings:', warnings);
+        }
+    }
+
+    return warnings;
+}
+
+/**
+ * Canonical task key generator - used consistently across scheduler
+ * @param {string} id - Building/hero ID
+ * @param {number} iter - Iteration/instance character (1-26 or char code)
+ * @param {number} level - Building/hero level
+ * @returns {string} Unique stable key like "Town_Hall_A_12"
+ */
+function generateTaskKey(id, iter, level) {
+    if (!id || iter === undefined || level === undefined) {
+        throw new Error(
+            `Invalid task key inputs: id=${id}, iter=${iter}, level=${level}`,
+        );
+    }
+    return `${id}_${iter}_${level}`;
+}
+
+/**
+ * Generates a determinism snapshot hash of a schedule
+ * Used for regression testing - same inputs should produce same hash
+ * @param {Array} schedule - Completed task schedule
+ * @returns {string} Hash of schedule order and timing
+ */
+function hashScheduleSnapshot(schedule) {
+    if (!Array.isArray(schedule) || schedule.length === 0) return 'EMPTY';
+
+    // Create a canonical snapshot of critical schedule properties
+    // Exclude timestamps/epochs to focus on task ordering
+    const snapshot = schedule.map((t) => ({
+        key: t.key,
+        worker: t.worker,
+        duration: t.duration,
+        priority: t.priority,
+    }));
+
+    // Simple deterministic hash (not cryptographic, just for verification)
+    let hash = 0;
+    const jsonStr = JSON.stringify(snapshot);
+    for (let i = 0; i < jsonStr.length; i++) {
+        const char = jsonStr.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(16);
+}
+
+/**
+ * Generates a baseline fixture snapshot for regression testing
+ * Call this to capture expected behavior for a given input
+ */
+export function generateTestFixture(
+    dataJSON,
+    scheme = 'LPT',
+    priorityMode = false,
+    base = 'home',
+    boost = 0.05,
+) {
+    const result = generateSchedule(
+        dataJSON,
+        false,
+        scheme,
+        priorityMode,
+        base,
+        boost,
+    );
+
+    if (result.err[0]) {
+        console.error('Fixture generation failed:', result.err);
+        return null;
+    }
+
+    return {
+        timestamp: new Date().toISOString(),
+        scheme,
+        priorityMode,
+        base,
+        boost,
+        makespan: result.sch.makespan,
+        taskCount: result.sch.schedule.length,
+        snapshot: hashScheduleSnapshot(result.sch.schedule),
+        // Full schedule data for detailed comparison if needed
+        schedule: result.sch.schedule.map((t) => ({
+            key: t.key,
+            worker: t.worker,
+            duration: t.duration,
+            priority: t.priority,
+        })),
+    };
+}
+
+/**
+ * Validates a schedule against baseline fixture
+ * Returns {match: boolean, differences: string[]}
+ */
+export function validateAgainstFixture(fixture, dataJSON, scheme, priorityMode, base, boost) {
+    if (!fixture) {
+        return { match: false, reason: 'No fixture provided' };
+    }
+
+    const result = generateSchedule(dataJSON, false, scheme, priorityMode, base, boost);
+
+    if (result.err[0]) {
+        return { match: false, reason: `Schedule generation failed: ${result.err[1]}` };
+    }
+
+    const currentHash = hashScheduleSnapshot(result.sch.schedule);
+    const match = currentHash === fixture.snapshot;
+
+    const differences = [];
+    if (result.sch.makespan !== fixture.makespan) {
+        differences.push(`Makespan mismatch: ${result.sch.makespan} vs ${fixture.makespan}`);
+    }
+    if (result.sch.schedule.length !== fixture.taskCount) {
+        differences.push(
+            `Task count mismatch: ${result.sch.schedule.length} vs ${fixture.taskCount}`,
+        );
+    }
+
+    return { match, snapshot: currentHash, expectedSnapshot: fixture.snapshot, differences };
+}
+
 export function generateSchedule(
     dataJSON,
     debug = false,
@@ -665,13 +984,38 @@ export function generateSchedule(
         };
     }
 
-    const { tasks, numWorkers, timestamp } = constructTasks(
+    const { tasks, numWorkers, timestamp, warnings } = constructTasks(
         dataJSON,
         scheme,
         priority,
         base,
         boost,
     );
+
+    //  Validate tasks before scheduling
+    try {
+        const taskWarnings = validateTasks(tasks, warnings);
+        warnings.push(...taskWarnings);
+    } catch (err) {
+        return {
+            sch: { schedule: [], makespan: 0 },
+            numBuilders: numWorkers,
+            startTime: timestamp,
+            err: [true, `Task validation failed: ${err.message}`],
+        };
+    }
+
+    //  Validate active-time window
+    try {
+        validateActiveTimeWindow(startTime, endTime);
+    } catch (err) {
+        return {
+            sch: { schedule: [], makespan: 0 },
+            numBuilders: numWorkers,
+            startTime: timestamp,
+            err: [true, `Active time validation failed: ${err.message}`],
+        };
+    }
 
     const schedule = myScheduler(
         tasks,
@@ -691,26 +1035,12 @@ export function generateSchedule(
 
     if (debug) printSchedule(schedule.schedule);
 
-    // after you have schedule (tasks) from generateSchedule:
-    // const windowSec = 10 * 3600; // 10 hours
-    // find the best 10-hour window by total overlapped duration
-    // const rec = recommendWindow(tasks, windowSec, 'duration', 1);
-    // console.log(rec);
-    // if (rec.length > 0) {
-    // 	const best = rec[0];
-    // 	console.log('Best window start (epoch):', best.start);
-    // 	console.log('Best window end (epoch):', best.end);
-    // 	console.log('Total overlapped seconds in window:', best.totalSeconds);
-    // 	console.log('Tasks in that window:', best.tasks);
-    // 	// you can format start/end to human time with your existing helpers
-    // }
+    const errs = warnings.length > 0 ? [false, ...warnings] : [false];
 
     return {
         sch: schedule,
         numBuilders: numWorkers,
         startTime: timestamp,
-        err: [false],
+        err: errs,
     };
 }
-
-generateSchedule(playerData, true, 'LPT', false, 'home');
