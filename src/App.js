@@ -4,6 +4,14 @@ import { BUILDING_COLORS } from './colorMap';
 import { TimelineCards } from './TimelineCards.jsx';
 import BuilderTimeline from './BuilderTimeline.jsx';
 import ActiveTimeInput from './ActiveTimeInput.jsx';
+import { validatePlayerJSON, generatePreflight } from './inputValidator.js';
+import { auditMappingCoverage, validateAllConfigs } from './configValidator.js';
+import {
+    ValidationMessageManager,
+    createStickyErrorAlert,
+    createWarningAlert,
+    SEVERITY,
+} from './errorPresentation.js';
 
 export function JsonInput({
     label = 'JSON Input',
@@ -238,6 +246,14 @@ export default function App() {
         return saved ? saved === 'true' : false;
     });
 
+    // Validation state
+    const [validationMessages, setValidationMessages] = useState(
+        new ValidationMessageManager(),
+    );
+    const [validationAlert, setValidationAlert] = useState(null);
+    const [preflightSummary, setPreflightSummary] = useState(null);
+    const [mappingWarnings, setMappingWarnings] = useState(null);
+
     React.useEffect(() => {
         localStorage.setItem('builderBonusPct', selectedPct);
         localStorage.setItem('baseVillage', village);
@@ -286,6 +302,85 @@ export default function App() {
             setErr(true);
             return;
         }
+
+        // Clear previous validation messages
+        const msgManager = new ValidationMessageManager();
+
+        // Phase 1: Input validation
+        const inputValidation = validatePlayerJSON(jD, village);
+        if (!inputValidation.valid) {
+            // Critical errors - cannot proceed
+            const errorAlert = createStickyErrorAlert(
+                inputValidation.errors.map((msg) => ({
+                    text: msg,
+                    severity: SEVERITY.CRITICAL,
+                })),
+            );
+            setValidationAlert(errorAlert);
+            setValidationMessages(msgManager);
+            setPreflightSummary(null);
+            setMappingWarnings(null);
+            setErr(true);
+            return;
+        }
+
+        // Add warnings to message manager
+        if (inputValidation.warnings && inputValidation.warnings.length > 0) {
+            inputValidation.warnings.forEach((w) => {
+                msgManager.addMessage(w, SEVERITY.WARNING, 'input_validation');
+            });
+        }
+
+        // Phase 2: Generate preflight summary
+        const preflight = generatePreflight(jD, village);
+        setPreflightSummary(preflight);
+
+        // Phase 3: Mapping coverage audit
+        const coverage = auditMappingCoverage(jD, village);
+        if (coverage.coverage < 90) {
+            msgManager.addMessage(
+                `Only ${Math.round(coverage.coverage)}% of buildings/heroes have mappings. ` +
+                    `${coverage.unmappedIds.length} items will be skipped during scheduling.`,
+                SEVERITY.WARNING,
+                'mapping_coverage',
+            );
+        }
+
+        if (coverage.warnings && coverage.warnings.length > 0) {
+            coverage.warnings.forEach((w) => {
+                msgManager.addMessage(w, SEVERITY.WARNING, 'mapping_audit');
+            });
+        }
+
+        setMappingWarnings(coverage);
+
+        // Phase 4: Config validation
+        const configValidation = validateAllConfigs(jD, village);
+        if (!configValidation.valid) {
+            configValidation.warnings.forEach((w) => {
+                msgManager.addMessage(w, SEVERITY.WARNING, 'config_validation');
+            });
+        }
+
+        // Create warning alert if there are warnings
+        const summary = msgManager.getSummary();
+        if (summary[SEVERITY.WARNING] > 0 || summary[SEVERITY.ERROR] > 0) {
+            const warningMessages = [];
+            const grouped = msgManager.getMessages(3);
+            grouped[SEVERITY.WARNING].forEach((m) => {
+                warningMessages.push({
+                    text: m.text,
+                    severity: SEVERITY.WARNING,
+                });
+            });
+            if (warningMessages.length > 0) {
+                setValidationAlert(createWarningAlert(warningMessages, 10000));
+            }
+        }
+
+        setValidationMessages(msgManager);
+
+        // Phase 5: Proceed to scheduling
         let activeWindowStart = activeTime.enabled ? activeTime.start : '00:00';
         let activeWindowEnd = activeTime.enabled ? activeTime.end : '23:59';
         const { sch, numBuilders, startTime, err } = generateSchedule(
@@ -399,6 +494,97 @@ export default function App() {
                     <h1 className="text-2xl font-bold text-dark-100 mb-6">
                         CoC Upgrade Tracker
                     </h1>
+
+                    {/* Validation Alert Display */}
+                    {validationAlert && (
+                        <div
+                            className={`mb-6 rounded-2xl p-4 border ${
+                                validationAlert.type === 'critical'
+                                    ? 'bg-red-900/20 border-red-500/50'
+                                    : 'bg-amber-900/20 border-amber-500/50'
+                            }`}
+                        >
+                            <div className="flex items-start gap-3">
+                                <div
+                                    className={`text-lg ${
+                                        validationAlert.type === 'critical'
+                                            ? 'text-red-400'
+                                            : 'text-amber-400'
+                                    }`}
+                                >
+                                    {validationAlert.type === 'critical'
+                                        ? '🔴'
+                                        : '⚠️'}
+                                </div>
+                                <div className="flex-1">
+                                    <h3
+                                        className={`font-bold text-sm mb-2 ${
+                                            validationAlert.type === 'critical'
+                                                ? 'text-red-300'
+                                                : 'text-amber-300'
+                                        }`}
+                                    >
+                                        {validationAlert.title}
+                                    </h3>
+                                    <div className="space-y-1">
+                                        {validationAlert.messages.map(
+                                            (msg, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className="text-xs text-dark-200"
+                                                >
+                                                    • {msg.text}
+                                                </div>
+                                            ),
+                                        )}
+                                    </div>
+                                </div>
+                                {validationAlert.dismissible && (
+                                    <button
+                                        onClick={() => setValidationAlert(null)}
+                                        className="text-dark-400 hover:text-dark-200 text-lg"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Preflight Summary */}
+                    {preflightSummary && tasks.length > 0 && (
+                        <div className="mb-6 glass-card rounded-2xl p-4 border border-dark-600 bg-dark-800/50">
+                            <h3 className="text-xs uppercase tracking-widest text-amber-400 font-bold mb-2">
+                                Validation Summary
+                            </h3>
+                            <div className="text-xs text-dark-200 space-y-1">
+                                <div>
+                                    ✓ {preflightSummary.buildingCount}
+                                    buildings (
+                                    {preflightSummary.ongoingBuildingCount}
+                                    upgrading)
+                                </div>
+                                <div>
+                                    ✓ {preflightSummary.heroCount} heroes
+                                    {preflightSummary.ongoingHeroCount > 0
+                                        ? ` (${preflightSummary.ongoingHeroCount} upgrading)`
+                                        : ''}
+                                </div>
+                                {mappingWarnings &&
+                                    mappingWarnings.coverage < 100 && (
+                                        <div className="text-amber-400">
+                                            ⚠️{' '}
+                                            {Math.round(
+                                                mappingWarnings.coverage,
+                                            )}
+                                            % mapping coverage (
+                                            {mappingWarnings.unmappedIds.length}{' '}
+                                            unmapped)
+                                        </div>
+                                    )}
+                            </div>
+                        </div>
+                    )}
                 </div>
                 {/* Controls Section */}
                 <div className="max-w-7xl mx-auto px-6">

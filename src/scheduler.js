@@ -939,15 +939,32 @@ export function generateTestFixture(
  * Validates a schedule against baseline fixture
  * Returns {match: boolean, differences: string[]}
  */
-export function validateAgainstFixture(fixture, dataJSON, scheme, priorityMode, base, boost) {
+export function validateAgainstFixture(
+    fixture,
+    dataJSON,
+    scheme,
+    priorityMode,
+    base,
+    boost,
+) {
     if (!fixture) {
         return { match: false, reason: 'No fixture provided' };
     }
 
-    const result = generateSchedule(dataJSON, false, scheme, priorityMode, base, boost);
+    const result = generateSchedule(
+        dataJSON,
+        false,
+        scheme,
+        priorityMode,
+        base,
+        boost,
+    );
 
     if (result.err[0]) {
-        return { match: false, reason: `Schedule generation failed: ${result.err[1]}` };
+        return {
+            match: false,
+            reason: `Schedule generation failed: ${result.err[1]}`,
+        };
     }
 
     const currentHash = hashScheduleSnapshot(result.sch.schedule);
@@ -955,7 +972,9 @@ export function validateAgainstFixture(fixture, dataJSON, scheme, priorityMode, 
 
     const differences = [];
     if (result.sch.makespan !== fixture.makespan) {
-        differences.push(`Makespan mismatch: ${result.sch.makespan} vs ${fixture.makespan}`);
+        differences.push(
+            `Makespan mismatch: ${result.sch.makespan} vs ${fixture.makespan}`,
+        );
     }
     if (result.sch.schedule.length !== fixture.taskCount) {
         differences.push(
@@ -963,7 +982,12 @@ export function validateAgainstFixture(fixture, dataJSON, scheme, priorityMode, 
         );
     }
 
-    return { match, snapshot: currentHash, expectedSnapshot: fixture.snapshot, differences };
+    return {
+        match,
+        snapshot: currentHash,
+        expectedSnapshot: fixture.snapshot,
+        differences,
+    };
 }
 
 export function generateSchedule(
