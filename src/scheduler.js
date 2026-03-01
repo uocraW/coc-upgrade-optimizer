@@ -375,16 +375,20 @@ function lockPredecessors(playerData, tasks, warnings = []) {
         key: generateTaskKey(t.id, t.iter, t.level),
     }));
 
+    const taskByKey = new Map(tasks.map((t) => [t.key, t]));
+
     // Lock to predecessor - Buildings (same building, previous level)
     for (const t of tasks) {
         const predKey = generateTaskKey(t.id, t.iter, t.level - 1);
-        const pred = tasks.find((pt) => pt.key === predKey);
+        const pred = taskByKey.get(predKey);
         if (pred) t.pred.push(pred.index);
     }
 
     const heroTasks = tasks.filter((t) => heroes.includes(t.id));
     const heroHall = playerData.buildings.find((b) => b.data === 1000071); // Existing HH
-    const hhTask = tasks.filter((t) => t.id === 'Hero_Hall'); // To construct HH
+    const hhTaskByLevel = new Map(
+        tasks.filter((t) => t.id === 'Hero_Hall').map((t) => [t.level, t]),
+    ); // To construct HH
     // Lock to predecessor - Heroes
     if (heroTasks.length > 0) {
         let hhLvl = 0;
@@ -394,7 +398,7 @@ function lockPredecessors(playerData, tasks, warnings = []) {
         for (const hero of heroTasks) {
             if (hero.priority === 1) continue; // Skip ongoing upgrades
             if (hero.HH > hhLvl) {
-                const reqTask = hhTask.find((t) => t.level === hero.HH);
+                const reqTask = hhTaskByLevel.get(hero.HH);
                 if (!reqTask) {
                     // Hero Hall not in schedule - recoverable with warning
                     warnings.push(
@@ -402,8 +406,7 @@ function lockPredecessors(playerData, tasks, warnings = []) {
                     );
                     continue; // Don't add predecessor, let task be scheduled anyway
                 }
-                const reqIdx = tasks.findIndex((t) => t.key === reqTask.key);
-                tasks[hero.index].pred.push(reqIdx);
+                tasks[hero.index].pred.push(reqTask.index);
             }
         }
     }
@@ -532,7 +535,21 @@ function myScheduler(
     }
 
     let ready = tasks.filter((t) => t.pred.length === 0);
-    let notReady = tasks.filter((t) => t.pred.length !== 0);
+    const taskByIndex = new Map(tasks.map((t) => [t.index, t]));
+    const completedByKey = new Map();
+    const notReadySet = new Set(
+        tasks.filter((t) => t.pred.length !== 0).map((t) => t.index),
+    );
+    const remainingPredCount = new Map(
+        tasks.map((t) => [t.index, t.pred.length]),
+    );
+    const successors = new Map(tasks.map((t) => [t.index, []]));
+    for (const t of tasks) {
+        for (const predIdx of t.pred) {
+            const list = successors.get(predIdx);
+            if (list) list.push(t.index);
+        }
+    }
     let running = [],
         completed = [];
 
@@ -546,7 +563,7 @@ function myScheduler(
     while (
         ready.length > 0 ||
         completed.length !== taskLength ||
-        notReady.length > 0
+        notReadySet.size > 0
     ) {
         const MAX_ITERATIONS = 100000;
         if (iterations > MAX_ITERATIONS) {
@@ -555,7 +572,7 @@ function myScheduler(
                 totalTasks: taskLength,
                 completedTasks: completed.length,
                 readyTasks: ready.length,
-                notReadyTasks: notReady.length,
+                notReadyTasks: notReadySet.size,
                 runningTasks: running.length,
                 workers: workers.map((w) => (w ? w.key : 'idle')),
             };
@@ -565,13 +582,13 @@ function myScheduler(
             throw new Error(
                 `Scheduler loop exceeded ${MAX_ITERATIONS} iterations. ` +
                     `Completed: ${completed.length}/${taskLength}, ` +
-                    `Ready: ${ready.length}, NotReady: ${notReady.length}. ` +
+                    `Ready: ${ready.length}, NotReady: ${notReadySet.size}. ` +
                     `Likely cause: predecessor graph cycle or invalid time window.`,
             );
         }
         if (DEBUG_SCHEDULER && iterations % 1000 === 0) {
             console.log(
-                `[Iteration ${iterations}] Total: ${taskLength}, Ready: ${ready.length}, NotReady: ${notReady.length}, Running: ${running.length}, Completed: ${completed.length}`,
+                `[Iteration ${iterations}] Total: ${taskLength}, Ready: ${ready.length}, NotReady: ${notReadySet.size}, Running: ${running.length}, Completed: ${completed.length}`,
             );
         }
         let idx = 0;
@@ -615,7 +632,7 @@ function myScheduler(
                 currTask.iter,
                 currTask.level - 1,
             );
-            const predTask = completed.find((t) => t.key === predKey);
+            const predTask = completedByKey.get(predKey);
             if (predTask && workers[predTask.worker] === null)
                 w = predTask.worker;
             ready[idx].worker = w;
@@ -640,21 +657,22 @@ function myScheduler(
         const finishedTask = workers.filter((wd) => wd?.end <= finishedTime);
         for (let ft of finishedTask) {
             completed.push(ft);
+            completedByKey.set(ft.key, ft);
             workers[ft.worker] = null;
             running = running.filter((t) => t.index !== ft.index);
 
             // Release successor tasks
-            let succTask = notReady.filter((t) => t.pred.includes(ft.index));
+            const succTask = successors.get(ft.index) || [];
             if (succTask.length > 0) {
-                for (const s of succTask) {
-                    const succIdx = notReady.findIndex(
-                        (t) => t.index === s.index,
-                    );
-                    const predIdx = notReady[succIdx].pred.indexOf(ft.index);
-                    notReady[succIdx].pred.splice(predIdx, 1);
-                    if (notReady[succIdx].pred.length === 0) {
-                        ready.push(s);
-                        notReady.splice(succIdx, 1);
+                for (const succIdx of succTask) {
+                    if (!notReadySet.has(succIdx)) continue;
+                    const nextPredCount =
+                        (remainingPredCount.get(succIdx) || 0) - 1;
+                    remainingPredCount.set(succIdx, nextPredCount);
+                    if (nextPredCount <= 0) {
+                        const succ = taskByIndex.get(succIdx);
+                        if (succ) ready.push(succ);
+                        notReadySet.delete(succIdx);
                     }
                 }
             }

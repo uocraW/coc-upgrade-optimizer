@@ -6,6 +6,6 @@ import App from './App';
 
 test('renders smart village tracker title', () => {
     render(<App />);
-    const headingElement = screen.getByText(/smart village tracker/i);
+    const headingElement = screen.getByText(/coc upgrade tracker/i);
     expect(headingElement).toBeInTheDocument();
 });

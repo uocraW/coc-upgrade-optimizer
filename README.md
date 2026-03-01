@@ -28,6 +28,12 @@ This project adapts the original Clash of Clans optimizer into a smart village t
 - **Migration**: Legacy keys are migrated once to the versioned schema (`cocTracker:v1:migration:done`).
 - **Corruption fallback**: Invalid or corrupted payloads are automatically discarded and replaced with safe defaults.
 
+## Performance Notes ⚡
+
+- The tracker now surfaces per-run scheduler performance in the Progress header (`ms`, task count, and iteration count).
+- Timeline done toggles avoid full timeline teardown/rebuild and update item styling in place.
+- Scheduler predecessor release now uses indexed successor bookkeeping to reduce repeated scans on large queues.
+
 ## Credits & Contributions 🤝
 
 This tracker is based on [SamBro2901/coc-upgrade-optimizer](https://github.com/SamBro2901/coc-upgrade-optimizer). Contributions and issues are welcome.

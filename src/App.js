@@ -286,6 +286,11 @@ export default function App() {
     const [validationAlert, setValidationAlert] = useState(null);
     const [preflightSummary, setPreflightSummary] = useState(null);
     const [mappingWarnings, setMappingWarnings] = useState(null);
+    const [perfStats, setPerfStats] = useState({
+        generationMs: null,
+        iterations: null,
+        taskCount: 0,
+    });
 
     React.useEffect(() => {
         savePersisted(persistenceKeys.settings, {
@@ -510,6 +515,7 @@ export default function App() {
             activeTime.enabled && activeTime.start ? activeTime.start : '00:00';
         let activeWindowEnd =
             activeTime.enabled && activeTime.end ? activeTime.end : '23:59';
+        const runStartPerf = performance.now();
         const {
             sch,
             numBuilders,
@@ -525,10 +531,19 @@ export default function App() {
             activeWindowStart,
             activeWindowEnd,
         );
+        const runDurationMs = performance.now() - runStartPerf;
         setErr(err);
         setTasks(sch.schedule);
         setMakespan(sch.makespan);
         setStartTime(runStart);
+        setPerfStats({
+            generationMs: Math.round(runDurationMs),
+            iterations:
+                Number.isFinite(sch.iterations) && sch.iterations >= 0
+                    ? sch.iterations
+                    : null,
+            taskCount: sch.schedule.length,
+        });
         setScheduleType(
             strategy === 'SPT'
                 ? 'Shortest Processing Time (SPT)'
@@ -547,6 +562,11 @@ export default function App() {
         });
     };
 
+    const remainingTasks = React.useMemo(
+        () => tasks.filter((task) => !doneKeys.has(taskKey(task))),
+        [tasks, doneKeys],
+    );
+
     const trackerStats = React.useMemo(() => {
         if (!tasks.length) {
             return {
@@ -559,24 +579,18 @@ export default function App() {
             };
         }
 
-        let completed = 0;
         let remainingDuration = 0;
         const byCategory = { Defense: 0, Resource: 0, Offense: 0, Hero: 0 };
 
-        tasks.forEach((task) => {
-            const done = doneKeys.has(taskKey(task));
-            if (done) {
-                completed += 1;
-                return;
-            }
-
+        remainingTasks.forEach((task) => {
             remainingDuration += Number(task.duration || 0);
             const category = getTaskCategory(task.id);
             byCategory[category] = (byCategory[category] || 0) + 1;
         });
 
         const total = tasks.length;
-        const remaining = total - completed;
+        const remaining = remainingTasks.length;
+        const completed = total - remaining;
         const completionPct = Math.round((completed / total) * 100);
 
         return {
@@ -587,11 +601,10 @@ export default function App() {
             remainingDuration,
             byCategory,
         };
-    }, [tasks, doneKeys]);
+    }, [tasks, remainingTasks]);
 
     const recommendedTasks = React.useMemo(() => {
-        return tasks
-            .filter((task) => !doneKeys.has(taskKey(task)))
+        return remainingTasks
             .map((task) => {
                 const priorityBoost = Math.max(
                     0,
@@ -618,7 +631,7 @@ export default function App() {
             })
             .sort((a, b) => b.smartScore - a.smartScore || a.start - b.start)
             .slice(0, 8);
-    }, [tasks, doneKeys, startTime]);
+    }, [remainingTasks, startTime]);
 
     const appliedSettings = React.useMemo(() => {
         const baseLabel = village === 'home' ? 'Home Village' : 'Builder Base';
@@ -941,6 +954,19 @@ export default function App() {
                                     <h2 className="text-xl font-bold text-dark-200 flex-1">
                                         Progress
                                     </h2>
+                                    {Number.isFinite(
+                                        perfStats.generationMs,
+                                    ) && (
+                                        <span className="px-3 py-1 text-2xs font-bold uppercase tracking-wider text-dark-200 border border-dark-600 rounded-full bg-dark-800/70">
+                                            {perfStats.generationMs}ms •{' '}
+                                            {perfStats.taskCount} tasks
+                                            {Number.isFinite(
+                                                perfStats.iterations,
+                                            )
+                                                ? ` • ${perfStats.iterations} iterations`
+                                                : ''}
+                                        </span>
+                                    )}
                                     {scheduleStale && (
                                         <span className="px-3 py-1 text-2xs font-bold uppercase tracking-wider text-amber-300 border border-amber-400/40 rounded-full bg-amber-400/10">
                                             Settings changed – rerun to refresh

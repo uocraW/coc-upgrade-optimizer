@@ -4,6 +4,39 @@ import { DataSet, Timeline } from 'vis-timeline/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import { BUILDING_COLORS } from './colorMap';
 
+const STYLE_ID = 'gantt-dark-theme';
+
+function getTaskTrackingKey(task, index, taskKeyFn) {
+    const fallback =
+        task.key ||
+        (task.id
+            ? `${task.id}|L${task.level}|#${task.iter || 0}`
+            : `task-${index}`);
+    return taskKeyFn ? taskKeyFn(task) : fallback;
+}
+
+function getItemStyle(task, isDone) {
+    const nameKey = task.id || task.text || task.name || '';
+    let color = BUILDING_COLORS[nameKey] || '#60a5fa';
+    const hex = color.replace('#', '');
+    const r = Math.max(0, parseInt(hex.substring(0, 2), 16) * 0.5);
+    const g = Math.max(0, parseInt(hex.substring(2, 4), 16) * 0.5);
+    const b = Math.max(0, parseInt(hex.substring(4, 6), 16) * 0.5);
+    color = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+
+    return `
+        background: ${isDone ? '#3a3a3a' : color};
+        border: 1px solid #222222;
+        border-radius: 3px;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 6px;
+        white-space: nowrap;
+        opacity: ${isDone ? 0.5 : 0.95};
+    `;
+}
+
 function formatDuration(seconds) {
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
@@ -25,6 +58,61 @@ export default function BuilderTimeline({
 }) {
     const ref = useRef(null);
     const timelineRef = useRef(null);
+    const itemsRef = useRef(null);
+
+    useEffect(() => {
+        if (document.getElementById(STYLE_ID)) return;
+
+        const styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = `
+            .vis-timeline {
+                border: none !important;
+            }
+
+            .vis-panel.vis-left,
+            .vis-panel.vis-top,
+            .vis-labelset,
+            .vis-time-axis {
+                background: #0a0a0a !important;
+            }
+
+            .vis-panel,
+            .vis-panel.vis-left,
+            .vis-panel.vis-right,
+            .vis-panel.vis-top,
+            .vis-panel.vis-bottom,
+            .vis-panel.vis-center,
+            .vis-labelset,
+            .vis-time-axis,
+            .vis-content,
+            .vis-label,
+            .vis-group {
+                border-color: #333333 !important;
+            }
+
+            .vis-label,
+            .vis-text {
+                color: #b0b0b0 !important;
+            }
+
+            .vis-item {
+                color: #ffffff !important;
+                box-shadow: none !important;
+            }
+
+            .vis-grid.vis-vertical,
+            .vis-grid.vis-horizontal,
+            .vis-grid.vis-minor,
+            .vis-grid.vis-major {
+                border-color: #333333 !important;
+            }
+            .vis-grid.vis-major {
+                border-color: #444444 !important;
+            }
+        `;
+        document.head.appendChild(styleEl);
+    }, []);
 
     useEffect(() => {
         if (!ref.current) return;
@@ -46,7 +134,6 @@ export default function BuilderTimeline({
             content: `<div style="color: #b0b0b0; font-weight: 600; font-size: 13px;">Builder ${Number(w) + 1}</div>`,
         }));
 
-        // create items for vis-timeline
         const items = tasks.map((t, i) => {
             const start = new Date((t.start || 0) * 1000);
             const endEpoch =
@@ -54,22 +141,8 @@ export default function BuilderTimeline({
                     ? Number(t.end)
                     : (t.start || 0) + (t.duration || 0);
             const end = new Date(Number(endEpoch) * 1000);
-            const fallbackKey =
-                t.key ||
-                (t.id ? `${t.id}|L${t.level}|#${t.iter || 0}` : `task-${i}`);
-            const trackingKey = taskKeyFn ? taskKeyFn(t) : fallbackKey;
+            const trackingKey = getTaskTrackingKey(t, i, taskKeyFn);
             const isDone = doneKeys?.has(trackingKey);
-
-            const nameKey = t.id || t.text || t.name || '';
-            let color = BUILDING_COLORS[nameKey] || '#60a5fa'; // fallback blue
-
-            // Darken the color for better contrast with white text
-            // Convert hex to RGB, darken, convert back
-            const hex = color.replace('#', '');
-            const r = Math.max(0, parseInt(hex.substring(0, 2), 16) * 0.5);
-            const g = Math.max(0, parseInt(hex.substring(2, 4), 16) * 0.5);
-            const b = Math.max(0, parseInt(hex.substring(4, 6), 16) * 0.5);
-            color = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
 
             const label = `${String(t.id)
                 .replaceAll('_', ' ')
@@ -81,23 +154,13 @@ export default function BuilderTimeline({
             const content = `${label} (${durLabel})`;
 
             return {
-                id: trackingKey || fallbackKey,
+                id: trackingKey,
                 group: Number(t.worker || 0),
                 start,
                 end,
                 content,
                 title: `${content}${isDone ? ' (done)' : ''}`,
-                style: `
-					background: ${isDone ? '#3a3a3a' : color};
-					border: 1px solid #222222;
-					border-radius: 3px;
-					color: #ffffff;
-					font-size: 12px;
-					font-weight: 600;
-					padding: 3px 6px;
-					white-space: nowrap;
-					opacity: ${isDone ? 0.5 : 0.95};
-				`,
+                style: getItemStyle(t, isDone),
             };
         });
 
@@ -128,9 +191,10 @@ export default function BuilderTimeline({
             showCurrentTime: true,
         };
 
+        itemsRef.current = new DataSet(items);
         timelineRef.current = new Timeline(
             container,
-            new DataSet(items),
+            itemsRef.current,
             new DataSet(groups),
             options,
         );
@@ -140,89 +204,51 @@ export default function BuilderTimeline({
                 if (!selected?.length) return;
                 const selectedId = String(selected[0]);
                 const selectedTask = tasks.find((task, index) => {
-                    const fallback =
-                        task.key ||
-                        (task.id
-                            ? `${task.id}|L${task.level}|#${task.iter || 0}`
-                            : `task-${index}`);
-                    const key = taskKeyFn ? taskKeyFn(task) : fallback;
-                    return String(key || fallback) === selectedId;
+                    const key = getTaskTrackingKey(task, index, taskKeyFn);
+                    return String(key) === selectedId;
                 });
                 if (selectedTask) onToggle(selectedTask);
                 timelineRef.current?.setSelection([]);
             });
         }
 
-        // Minimal dark theme color overrides
-        const styleId = 'gantt-dark-theme';
-        let styleEl = document.getElementById(styleId);
-        if (styleEl) styleEl.remove();
-
-        styleEl = document.createElement('style');
-        styleEl.id = styleId;
-        styleEl.textContent = `
-      /* Remove outer border */
-      .vis-timeline {
-        border: none !important;
-      }
-      
-      /* Dark backgrounds */
-      .vis-panel.vis-left,
-      .vis-panel.vis-top,
-      .vis-labelset,
-      .vis-time-axis {
-        background: #0a0a0a !important;
-      }
-      
-      /* ALL borders dark gray - comprehensive */
-      .vis-panel,
-      .vis-panel.vis-left,
-      .vis-panel.vis-right,
-      .vis-panel.vis-top,
-      .vis-panel.vis-bottom,
-      .vis-panel.vis-center,
-      .vis-labelset,
-      .vis-time-axis,
-      .vis-content,
-      .vis-label,
-      .vis-group {
-        border-color: #333333 !important;
-      }
-      
-      /* Text colors */
-      .vis-label,
-      .vis-text {
-        color: #b0b0b0 !important;
-      }
-      
-      /* Task items */
-      .vis-item {
-        color: #ffffff !important;
-        box-shadow: none !important;
-      }
-      
-      /* Grid lines dark */
-      .vis-grid.vis-vertical,
-      .vis-grid.vis-horizontal,
-      .vis-grid.vis-minor,
-      .vis-grid.vis-major {
-        border-color: #333333 !important;
-      }
-      .vis-grid.vis-major {
-        border-color: #444444 !important;
-      }
-    `;
-        document.head.appendChild(styleEl);
-
         return () => {
             try {
                 timelineRef.current.destroy();
             } catch {}
-            if (styleEl && styleEl.parentNode) {
-                styleEl.parentNode.removeChild(styleEl);
-            }
+            timelineRef.current = null;
+            itemsRef.current = null;
         };
-    }, [tasks, start, height, doneKeys, onToggle, taskKeyFn]);
+    }, [tasks, start, height, onToggle, taskKeyFn]);
+
+    useEffect(() => {
+        if (!itemsRef.current || !tasks.length) return;
+
+        const updates = tasks.map((task, index) => {
+            const trackingKey = getTaskTrackingKey(task, index, taskKeyFn);
+            const isDone = doneKeys?.has(trackingKey);
+            const endEpoch =
+                task.end != null
+                    ? Number(task.end)
+                    : (task.start || 0) + (task.duration || 0);
+            const durLabel = formatDuration(
+                Number(task.duration || endEpoch - (task.start || 0)),
+            );
+            const label = `${String(task.id)
+                .replaceAll('_', ' ')
+                .replace('Builder', '')
+                .trim()}${task.level ? ` L${task.level}` : ''} ${task.iter ? `#${task.iter}` : ''}`;
+            const content = `${label} (${durLabel})`;
+
+            return {
+                id: trackingKey,
+                title: `${content}${isDone ? ' (done)' : ''}`,
+                style: getItemStyle(task, isDone),
+            };
+        });
+
+        itemsRef.current.update(updates);
+    }, [doneKeys, tasks, taskKeyFn]);
 
     return (
         <div
