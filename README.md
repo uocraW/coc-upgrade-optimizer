@@ -34,6 +34,19 @@ This project adapts the original Clash of Clans optimizer into a smart village t
 - Timeline done toggles avoid full timeline teardown/rebuild and update item styling in place.
 - Scheduler predecessor release now uses indexed successor bookkeeping to reduce repeated scans on large queues.
 
+## Development & Deployment 🔧
+
+**For Developers:**
+- **Release Notes**: See [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) for version history and technical changes
+- **Testing**: Run `npm test` to execute all unit tests (11 tests covering scheduler, app, and persistence)
+- **Building**: Run `npm run build` for production-optimized artifacts
+- **Deployment**: See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for step-by-step deployment instructions
+- **Smoke Testing**: Use [docs/SMOKE_TEST_CHECKLIST.md](docs/SMOKE_TEST_CHECKLIST.md) to validate releases
+
+**Documentation:**
+- [Master Plan](docs/SMART_TRACKER_MASTER_PLAN.md) - Full project roadmap and phase details
+- [Phase 7 Summary](docs/PHASE7_STABILIZATION_SUMMARY.md) - Latest stabilization and release preparation
+
 ## Credits & Contributions 🤝
 
 This tracker is based on [SamBro2901/coc-upgrade-optimizer](https://github.com/SamBro2901/coc-upgrade-optimizer). Contributions and issues are welcome.

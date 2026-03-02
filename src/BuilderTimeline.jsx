@@ -219,6 +219,8 @@ export default function BuilderTimeline({
             timelineRef.current = null;
             itemsRef.current = null;
         };
+        // doneKeys intentionally omitted - handled by incremental update effect below
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tasks, start, height, onToggle, taskKeyFn]);
 
     useEffect(() => {

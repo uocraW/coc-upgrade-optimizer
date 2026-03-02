@@ -241,6 +241,7 @@ export default function App() {
     const [tasks, setTasks] = useState([]);
     const [makespan, setMakespan] = useState(0);
     const [startTime, setStartTime] = useState(Math.floor(Date.now() / 1000));
+    // eslint-disable-next-line no-unused-vars
     const [err, setErr] = useState(false);
     const [scheduleType, setScheduleType] = useState(
         'Longest Processing Time (LPT)',
@@ -323,6 +324,7 @@ export default function App() {
             playerTag: jsonData?.tag || 'unknown',
             strategy: scheduleMode,
         });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [doneStorageKey]);
 
     React.useEffect(() => {

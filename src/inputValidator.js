@@ -7,7 +7,10 @@
 const REQUIRED_BASE_FIELDS = ['buildings', 'heroes'];
 const REQUIRED_BUILDER_BASE_FIELDS = ['buildings2', 'heroes2'];
 
+// Reserved for future validation enhancements
+// eslint-disable-next-line no-unused-vars
 const VALID_BUILDING_FIELDS = ['data', 'lvl', 'cnt', 'timer', 'gear_up'];
+// eslint-disable-next-line no-unused-vars
 const VALID_HERO_FIELDS = ['data', 'lvl', 'timer'];
 
 /**
