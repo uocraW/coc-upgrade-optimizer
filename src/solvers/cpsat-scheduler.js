@@ -19,8 +19,8 @@ const ortools = require('ts-ortools');
  * @returns {object} OR-Tools CpModel instance
  */
 function initSolver() {
-  const { CpModel } = ortools;
-  return new CpModel();
+    const { CpModel } = ortools;
+    return new CpModel();
 }
 
 /**
@@ -29,44 +29,47 @@ function initSolver() {
  * @returns {object} Result with answer and metadata
  */
 function testTrivialProblem() {
-  try {
-    const { CpModel, CpSolver } = ortools;
-    const model = new CpModel();
+    try {
+        const { CpModel, CpSolver } = ortools;
+        const model = new CpModel();
 
-    // Decision variable: integer X in range [0, 100]
-    const x = model.newIntVar(0, 100, 'x');
+        // Decision variable: integer X in range [0, 100]
+        const x = model.newIntVar(0, 100, 'x');
 
-    // Constraint: X >= 10
-    model.addConstraint(x >= 10);
+        // Constraint: X >= 10
+        model.addConstraint(x >= 10);
 
-    // Objective: minimize X
-    model.minimize(x);
+        // Objective: minimize X
+        model.minimize(x);
 
-    // Solve
-    const solver = new CpSolver();
-    const status = solver.solve(model);
+        // Solve
+        const solver = new CpSolver();
+        const status = solver.solve(model);
 
-    if (status === ortools.CpSolverStatus.OPTIMAL || status === ortools.CpSolverStatus.FEASIBLE) {
-      return {
-        success: true,
-        answer: solver.value(x),
-        expected: 10,
-        status: 'Trivial problem solved (X=10)',
-        solverStatus: status,
-      };
-    } else {
-      return {
-        success: false,
-        status: `No solution found. Status: ${status}`,
-      };
+        if (
+            status === ortools.CpSolverStatus.OPTIMAL ||
+            status === ortools.CpSolverStatus.FEASIBLE
+        ) {
+            return {
+                success: true,
+                answer: solver.value(x),
+                expected: 10,
+                status: 'Trivial problem solved (X=10)',
+                solverStatus: status,
+            };
+        } else {
+            return {
+                success: false,
+                status: `No solution found. Status: ${status}`,
+            };
+        }
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            stack: error.stack,
+        };
     }
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message,
-      stack: error.stack,
-    };
-  }
 }
 
 /**
@@ -77,19 +80,19 @@ function testTrivialProblem() {
  * @returns {object} Schedule with tasks assigned start/end times and workers
  */
 function solveWithCPSAT(tasks, options = {}) {
-  // TODO: Implement full solver (Tasks 2-9)
-  // For now, return stub for testing
-  return {
-    schedule: [],
-    makespan: 0,
-    solveTime: 0,
-    status: 'STUB: CP-SAT solver not yet implemented',
-  };
+    // TODO: Implement full solver (Tasks 2-9)
+    // For now, return stub for testing
+    return {
+        schedule: [],
+        makespan: 0,
+        solveTime: 0,
+        status: 'STUB: CP-SAT solver not yet implemented',
+    };
 }
 
 // Export for testing and use
 module.exports = {
-  initSolver,
-  testTrivialProblem,
-  solveWithCPSAT,
+    initSolver,
+    testTrivialProblem,
+    solveWithCPSAT,
 };

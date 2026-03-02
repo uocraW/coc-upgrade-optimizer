@@ -11,10 +11,10 @@ import { useEffect, useState, useCallback } from 'react';
  * @returns {boolean} True if running in Electron, false otherwise
  */
 export function isElectron() {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.electronAPI !== 'undefined'
-  );
+    return (
+        typeof window !== 'undefined' &&
+        typeof window.electronAPI !== 'undefined'
+    );
 }
 
 /**
@@ -24,16 +24,16 @@ export function isElectron() {
  * @returns {Promise} Result from handler
  */
 export async function invokeIPC(channel, ...args) {
-  if (isElectron()) {
-    return window.electronAPI.invoke(channel, ...args);
-  }
+    if (isElectron()) {
+        return window.electronAPI.invoke(channel, ...args);
+    }
 
-  // Fallback: localStorage-based stub for web mode
-  console.warn(`[IPC Fallback] ${channel} - web mode (localStorage)`);
-  return {
-    success: true,
-    message: 'Web mode - localStorage fallback',
-  };
+    // Fallback: localStorage-based stub for web mode
+    console.warn(`[IPC Fallback] ${channel} - web mode (localStorage)`);
+    return {
+        success: true,
+        message: 'Web mode - localStorage fallback',
+    };
 }
 
 /**
@@ -43,15 +43,15 @@ export async function invokeIPC(channel, ...args) {
  * @returns {void}
  */
 export function useIPCListener(channel, callback) {
-  useEffect(() => {
-    if (!isElectron()) {
-      console.warn(`[IPC Listener] ${channel} - not in Electron`);
-      return;
-    }
+    useEffect(() => {
+        if (!isElectron()) {
+            console.warn(`[IPC Listener] ${channel} - not in Electron`);
+            return;
+        }
 
-    const removeListener = window.electronAPI.on(channel, callback);
-    return () => removeListener();
-  }, [channel, callback]);
+        const removeListener = window.electronAPI.on(channel, callback);
+        return () => removeListener();
+    }, [channel, callback]);
 }
 
 /**
@@ -60,37 +60,37 @@ export function useIPCListener(channel, callback) {
  * @returns {object} { village, loading, error }
  */
 export function useLoadVillage(villageId) {
-  const [village, setVillage] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [village, setVillage] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!villageId) {
-      setLoading(false);
-      return;
-    }
-
-    (async () => {
-      try {
-        setLoading(true);
-        const result = await invokeIPC('get-village', villageId);
-        if (result.success) {
-          setVillage(result.village);
-          setError(null);
-        } else {
-          setError(result.error || 'Failed to load village');
-          setVillage(null);
+    useEffect(() => {
+        if (!villageId) {
+            setLoading(false);
+            return;
         }
-      } catch (err) {
-        setError(err.message);
-        setVillage(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [villageId]);
 
-  return { village, loading, error };
+        (async () => {
+            try {
+                setLoading(true);
+                const result = await invokeIPC('get-village', villageId);
+                if (result.success) {
+                    setVillage(result.village);
+                    setError(null);
+                } else {
+                    setError(result.error || 'Failed to load village');
+                    setVillage(null);
+                }
+            } catch (err) {
+                setError(err.message);
+                setVillage(null);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [villageId]);
+
+    return { village, loading, error };
 }
 
 /**
@@ -98,29 +98,29 @@ export function useLoadVillage(villageId) {
  * @returns {object} { save, saving, error }
  */
 export function useSaveVillage() {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
 
-  const save = useCallback(async (villageData) => {
-    try {
-      setSaving(true);
-      const result = await invokeIPC('save-village', villageData);
-      if (result.success) {
-        setError(null);
-        return true;
-      } else {
-        setError(result.error || 'Failed to save village');
-        return false;
-      }
-    } catch (err) {
-      setError(err.message);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+    const save = useCallback(async (villageData) => {
+        try {
+            setSaving(true);
+            const result = await invokeIPC('save-village', villageData);
+            if (result.success) {
+                setError(null);
+                return true;
+            } else {
+                setError(result.error || 'Failed to save village');
+                return false;
+            }
+        } catch (err) {
+            setError(err.message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    }, []);
 
-  return { save, saving, error };
+    return { save, saving, error };
 }
 
 /**
@@ -128,33 +128,37 @@ export function useSaveVillage() {
  * @returns {object} { solve, solving, schedule, error }
  */
 export function useSolveSchedule() {
-  const [solving, setSolving] = useState(false);
-  const [schedule, setSchedule] = useState(null);
-  const [error, setError] = useState(null);
+    const [solving, setSolving] = useState(false);
+    const [schedule, setSchedule] = useState(null);
+    const [error, setError] = useState(null);
 
-  const solve = useCallback(async (villageData, config) => {
-    try {
-      setSolving(true);
-      const result = await invokeIPC('solve-schedule', villageData, config);
-      if (result.success) {
-        setSchedule(result.schedule || []);
-        setError(null);
-        return result.schedule;
-      } else {
-        setError(result.error || 'Failed to solve schedule');
-        setSchedule(null);
-        return null;
-      }
-    } catch (err) {
-      setError(err.message);
-      setSchedule(null);
-      return null;
-    } finally {
-      setSolving(false);
-    }
-  }, []);
+    const solve = useCallback(async (villageData, config) => {
+        try {
+            setSolving(true);
+            const result = await invokeIPC(
+                'solve-schedule',
+                villageData,
+                config,
+            );
+            if (result.success) {
+                setSchedule(result.schedule || []);
+                setError(null);
+                return result.schedule;
+            } else {
+                setError(result.error || 'Failed to solve schedule');
+                setSchedule(null);
+                return null;
+            }
+        } catch (err) {
+            setError(err.message);
+            setSchedule(null);
+            return null;
+        } finally {
+            setSolving(false);
+        }
+    }, []);
 
-  return { solve, solving, schedule, error };
+    return { solve, solving, schedule, error };
 }
 
 /**
@@ -162,30 +166,30 @@ export function useSolveSchedule() {
  * @returns {object} { villages, loading, error }
  */
 export function useListVillages() {
-  const [villages, setVillages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [villages, setVillages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const result = await invokeIPC('list-villages');
-        if (result.success) {
-          setVillages(result.villages || []);
-          setError(null);
-        } else {
-          setError(result.error || 'Failed to list villages');
-          setVillages([]);
-        }
-      } catch (err) {
-        setError(err.message);
-        setVillages([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    useEffect(() => {
+        (async () => {
+            try {
+                setLoading(true);
+                const result = await invokeIPC('list-villages');
+                if (result.success) {
+                    setVillages(result.villages || []);
+                    setError(null);
+                } else {
+                    setError(result.error || 'Failed to list villages');
+                    setVillages([]);
+                }
+            } catch (err) {
+                setError(err.message);
+                setVillages([]);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, []);
 
-  return { villages, loading, error };
+    return { villages, loading, error };
 }

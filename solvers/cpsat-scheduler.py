@@ -15,16 +15,16 @@ import json
 def solve_schedule(village_data, config):
     """
     Stub solver: Echo input
-    
+
     Args:
         village_data: dict with buildings, heroes, etc.
         config: solver configuration (numWorkers, objective, etc.)
-    
+
     Returns:
         dict with schedule, makespan, solveTime
     """
     # TODO: Implement actual CP-SAT logic here in Phase 8b
-    
+
     return {
         "success": True,
         "schedule": [],  # Will be filled by CP-SAT solver
@@ -43,17 +43,17 @@ def main():
         # Read input from stdin
         input_data = sys.stdin.read()
         payload = json.loads(input_data)
-        
+
         village_data = payload.get("village", {})
         config = payload.get("config", {})
-        
+
         # Solve
         result = solve_schedule(village_data, config)
-        
+
         # Write result to stdout
         json.dump(result, sys.stdout)
         sys.stdout.flush()
-        
+
     except json.JSONDecodeError as e:
         error_response = {
             "success": False,
