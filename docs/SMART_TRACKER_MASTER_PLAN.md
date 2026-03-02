@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Date | 2026-03-01 (Updated) |
-| Status | In Progress (Phases 0-7 Complete, Phase 8 Complete, Phase 8b In Progress, Phases 9-17 Planned) |
+| Date | 2026-03-02 (Updated) |
+| Status | In Progress (Phases 0-7 Complete, Phase 8 Complete, Phase 8A In Progress, Phases 8b-17 Planned) |
 | Owner | jrmuy |
 | Scope | Web-based tracker (0-7) + Personal desktop assistant evolution (8-17) |
 
@@ -63,8 +63,9 @@
       - [Release Tasks](#release-tasks)
       - [Stabilization Tasks](#stabilization-tasks)
       - [Acceptance Criteria](#acceptance-criteria-5)
-  - [Future Evolution: Personal Smart CoC Assistant (Phases 8-15)](#future-evolution-personal-smart-coc-assistant-phases-8-15)
+  - [Future Evolution: Personal Smart CoC Assistant (Phases 8-17)](#future-evolution-personal-smart-coc-assistant-phases-8-17)
     - [Phase 8 - Multi-Objective Optimization Engine](#phase-8---multi-objective-optimization-engine)
+    - [Phase 8A - Electron Desktop App Conversion](#phase-8a---electron-desktop-app-conversion)
     - [Phase 8b - Constraint Programming Scheduler (CP-SAT) Refactor](#phase-8b---constraint-programming-scheduler-cp-sat-refactor)
       - [Objectives](#objectives-6)
       - [Tasks](#tasks-1)
@@ -742,7 +743,7 @@
 
 ---
 
-## Future Evolution: Personal Smart CoC Assistant (Phases 8-15)
+## Future Evolution: Personal Smart CoC Assistant (Phases 8-17)
 
 **Vision Statement:** Transform the current web-based tracker into a personal, adaptive desktop assistant with multi-objective planning, passive state awareness, live recommendations, multi-village support, and automated ingestion via screenshot/OCR. This evolution shifts from "static optimizer" to "intelligent companion" that adapts to real-world usage patterns.
 
@@ -759,6 +760,72 @@
 Implemented weighted objective functions with 5 profiles (TimeMax, Balanced, HeroAvailability, ResourceSmoothing, RushMode) using greedy list-scheduling approach. All acceptance criteria met and validated.
 
 **Note**: Phase 8 was a successful stepping stone that proved the value of multi-objective optimization. However, it revealed fundamental greedy algorithm limitations (no backtracking, suboptimal makespan, resource bunching). This led to Phase 8b.
+
+---
+
+### Phase 8A - Electron Desktop App Conversion
+
+**Status: 🔄 In Progress** (March 2026)
+
+Convert React web app to Electron desktop application to enable Python subprocess execution for Google OR-Tools CP-SAT solver (Phase 8b).
+
+**Why this matters**:
+- Google OR-Tools only officially supports Python, Java, C++, and C#
+- No official JavaScript/npm binding for CP-SAT solver
+- Electron allows spawning Python subprocess from Node.js main process
+- Unblocks CP-SAT implementation in Phase 8b
+- Enables future desktop features (Phases 9-17): multi-village, OCR ingestion, background monitoring
+
+#### Architecture
+
+```
+Electron App
+├── Main Process (Node.js)  → spawns Python solver via child_process
+├── Preload Script (IPC bridge)
+└── Renderer Process (React) → IPC calls to main process
+
+External: Python Subprocess
+└── solvers/cpsat-scheduler.py (reads stdin, writes stdout JSON)
+```
+
+#### Tasks
+
+**See `/docs/PHASE_8A_ELECTRON_CONVERSION_PLAN.md` for detailed 9-task breakdown:**
+
+1. **Project Structure Refactoring** (1.5h) - Create Electron entry point, preload script, IPC wrapper
+2. **Install Electron & Dependencies** (0.5h) - Add electron, electron-builder, dev helpers
+3. **Create Electron Main Process** (1.5h) - Window management, basic IPC handlers, Python subprocess wrapper
+4. **Create Preload & IPC Safety Layer** (1h) - Secure API bridge between React and main process
+5. **Update Package.json Scripts** (0.5h) - dev, build, dist scripts for Electron
+6. **Update React App Entry Point** (1h) - Detect Electron environment, adapt persistence layer
+7. **Create Python Solver Stub** (1h) - Placeholder /solvers/cpsat-scheduler.py (full impl in Phase 8b)
+8. **Testing & Validation** (2h) - Manual testing, build testing, fallback to web mode
+9. **Documentation & Master Plan Update** (1h) - Electron architecture guide, Phase 8A checklist
+
+#### Success Criteria
+
+- [ ] `npm run dev` launches Electron window with React app running
+- [ ] Village data persists via IPC (can load/save)
+- [ ] Python subprocess call succeeds (JSON in → JSON out)
+- [ ] All existing tests pass (backward compatible)
+- [ ] Packaged app (.exe) runs standalone (no npm needed)
+- [ ] Web fallback via localStorage still works
+- [ ] Phase 8b can proceed (Python subprocess pipeline ready)
+
+#### Timeline Estimate
+
+**Total: 12-14 hours** (~1.5-2 days focused work)
+
+**Detailed breakdown**:
+- Task 1: 1.5h
+- Task 2: 0.5h
+- Task 3: 1.5h
+- Task 4: 1.0h
+- Task 5: 0.5h
+- Task 6: 1.0h
+- Task 7: 1.0h
+- Task 8: 2.0h
+- Task 9: 1.0h
 
 ---
 
@@ -2004,20 +2071,19 @@ From "user initiates all actions" to "app suggests actions based on real-time st
 
 ### Next Steps (Phase 8+)
 
-**Immediate (Phase 8-9):**
-1. **Decision Point:** Electron vs. native Windows for desktop wrapper
-2. **Architecture:** Design multi-village data model and objective scoring system
-3. **Prototyping:** Build multi-objective optimizer in current web app (easier iteration)
-4. **Validation:** Test objective profiles with real village data
+**Immediate (Phase 8A-8b):**
+1. **Phase 8A: Electron Conversion** (12-14 hours) - Convert React web app to Electron desktop app with IPC bridge for Python subprocess
+2. **Phase 8A Success:** Python solver subprocess pipeline ready, Phase 8b unblocked
+3. **Phase 8b: CP-SAT Scheduler** (11-12 hours) - Replace greedy solver with Google OR-Tools constraint programming solver
 
-**Near-Term (Phase 10-12):**
-1. Implement real-time timer system and next-action queue
-2. Build adaptive rescheduling engine
-3. Add rush mode templates for TH8-15
-4. Continue testing in web app, prepare for Electron migration
+**Near-Term (Phase 9-12):**
+1. Implement multi-village persistent model and switcher UI
+2. Build adaptive rescheduling engine with real-time timer
+3. Add rush mode policy engine
+4. Continue testing in Electron app, stabilize performance
 
 **Mid-Term (Phase 13-14):**
-1. Develop Windows companion service (Node.js background service)
+1. Develop Windows companion service (OCR ingestion)
 2. Integrate OCR pipeline (Tesseract or Windows OCR API)
 3. Build reconciliation layer for conflict resolution
 4. Test with alpha users (OCR accuracy feedback loop)
