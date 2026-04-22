@@ -1060,16 +1060,24 @@ function myScheduler(
             if (!isWithinActiveWindow(currTimeString, activeStart, activeEnd))
                 break;
 
+            const currentLoopTime = currTime;
             idx = ready.findIndex(
                 (task) =>
-                    getHeroBlockedUntil(task, currTime, heroAwakeMoments) ===
-                    null,
+                    getHeroBlockedUntil(
+                        task,
+                        currentLoopTime,
+                        heroAwakeMoments,
+                    ) === null,
             );
 
             if (idx === -1) {
                 const blockedUntilCandidates = ready
                     .map((task) =>
-                        getHeroBlockedUntil(task, currTime, heroAwakeMoments),
+                        getHeroBlockedUntil(
+                            task,
+                            currentLoopTime,
+                            heroAwakeMoments,
+                        ),
                     )
                     .filter((blockedUntil) =>
                         Number.isFinite(Number(blockedUntil)),
