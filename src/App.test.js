@@ -21,9 +21,22 @@ test('renders phase controls for strategy and reset actions', () => {
     });
     expect(strategySelect).toBeInTheDocument();
 
+    const languageSelect = screen.getByRole('combobox', {
+        name: /display language/i,
+    });
+    expect(languageSelect).toBeInTheDocument();
+
     // Verify options include legacy LPT/SPT and new profiles
     expect(screen.getByText(/longest processing time/i)).toBeInTheDocument();
     expect(screen.getByText(/shortest processing time/i)).toBeInTheDocument();
+    expect(screen.getByText(/english/i)).toBeInTheDocument();
+    expect(screen.getByText(/balanced/i)).toBeInTheDocument();
+    expect(screen.getByText(/resource smoothing/i)).toBeInTheDocument();
+    expect(
+        screen.queryByText(/time maximization \(lpt\)/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/hero availability/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rush mode/i)).not.toBeInTheDocument();
 
     expect(
         screen.getByRole('button', { name: /reset settings/i }),

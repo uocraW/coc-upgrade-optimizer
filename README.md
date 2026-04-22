@@ -49,4 +49,4 @@ This project adapts the original Clash of Clans optimizer into a smart village t
 
 ## Credits & Contributions 🤝
 
-This tracker is based on [SamBro2901/coc-upgrade-optimizer](https://github.com/SamBro2901/coc-upgrade-optimizer). Contributions and issues are welcome.
+This tracker is based on [Jrmuys/coc-upgrade-optimizer](https://github.com/Jrmuys/coc-upgrade-optimizer), which itself builds on [SamBro2901/coc-upgrade-optimizer](https://github.com/SamBro2901/coc-upgrade-optimizer). Contributions and issues are welcome.

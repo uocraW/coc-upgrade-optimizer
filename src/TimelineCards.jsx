@@ -1,4 +1,5 @@
 import React from 'react';
+import { getDisplayName } from './displayNames.js';
 
 function formatDuration(seconds) {
     const days = Math.floor(seconds / (24 * 60 * 60));
@@ -51,6 +52,7 @@ export function TimelineCards({
     doneKeys,
     onToggle,
     taskKeyFn,
+    displayLanguage = 'zh',
 }) {
     if (!tasks.length) return null;
 
@@ -112,10 +114,7 @@ export function TimelineCards({
                         <div className="flex items-start justify-between gap-3 mb-3">
                             <div className="flex-1">
                                 <h3 className="text-lg font-bold text-dark-100 mb-1.5 group-hover:text-amber-400 transition-colors">
-                                    {String(t.id)
-                                        .replaceAll('_', ' ')
-                                        .replace('Builder', '')
-                                        .trim()}
+                                    {getDisplayName(t.id, displayLanguage)}
                                 </h3>
                                 <div className="flex items-center gap-2.5 flex-wrap">
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 rounded-lg text-xs font-semibold text-amber-400">

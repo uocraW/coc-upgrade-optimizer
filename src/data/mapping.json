@@ -75,9 +75,14 @@
 	"1000082": "Healing_Hut",
 	"1000084": "Merged_Archer_Tower",
 	"1000085": "Merged_Cannon",
+	"1000086": "Revenge_Tower",
 	"1000089": "Firespitter",
 	"1000093": "Helper_Hut",
 	"1000097": "Crafting_Station",
+	"1000102": "Super_Wizard_Tower",
+
+	"107000000": "Longshot",
+	"107000001": "Smasher",
 
 	"12000000": "Bomb",
 	"12000001": "Spring_Trap",
@@ -92,5 +97,6 @@
 	"28000001": "Archer_Queen",
 	"28000002": "Grand_Warden",
 	"28000004": "Royal_Champion",
-	"28000006": "Minion_Prince"
+	"28000006": "Minion_Prince",
+	"28000007": "Dragon_Duke"
 }

@@ -86,10 +86,17 @@
 		},
 		{
 			"level": 13,
-			"cost": 10000000,
+			"cost": 8500000,
+			"currency": "gold",
+			"duration": 388800,
+			"TH": 17
+		},
+		{
+			"level": 14,
+			"cost": 14000000,
 			"currency": "gold",
 			"duration": 691200,
-			"TH": 17
+			"TH": 18
 		}
 	],
 	"Spring_Trap": [
@@ -176,6 +183,13 @@
 			"currency": "gold",
 			"duration": 820800,
 			"TH": 17
+		},
+		{
+			"level": 13,
+			"cost": 16000000,
+			"currency": "gold",
+			"duration": 950400,
+			"TH": 18
 		}
 	],
 	"Giant_Bomb": [
@@ -337,10 +351,17 @@
 		},
 		{
 			"level": 12,
-			"cost": 11000000,
+			"cost": 9500000,
 			"currency": "gold",
-			"duration": 734400,
+			"duration": 475200,
 			"TH": 17
+		},
+		{
+			"level": 13,
+			"cost": 15000000,
+			"currency": "gold",
+			"duration": 777600,
+			"TH": 18
 		}
 	],
 	"Seeking_Air_Mine": [
@@ -422,6 +443,13 @@
 			"currency": "gold",
 			"duration": 43200,
 			"TH": 10
+		},
+		{
+			"level": 5,
+			"cost": 18000000,
+			"currency": "gold",
+			"duration": 604800,
+			"TH": 18
 		}
 	],
 	"Tornado_Trap": [

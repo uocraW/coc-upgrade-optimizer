@@ -351,8 +351,15 @@
 			"level": 18,
 			"cost": 10000000,
 			"currency": "elixir",
-			"duration": 1080000,
+			"duration": 604800,
 			"TH": 17
+		},
+		{
+			"level": 19,
+			"cost": 18000000,
+			"currency": "elixir",
+			"duration": 1080000,
+			"TH": 18
 		}
 	],
 	"Elixir_Storage": [
@@ -479,8 +486,15 @@
 			"level": 18,
 			"cost": 10000000,
 			"currency": "gold",
-			"duration": 1080000,
+			"duration": 604800,
 			"TH": 17
+		},
+		{
+			"level": 19,
+			"cost": 18000000,
+			"currency": "gold",
+			"duration": 1080000,
+			"TH": 18
 		}
 	],
 	"Dark_Elixir_Drill": [
@@ -637,8 +651,15 @@
 			"level": 12,
 			"cost": 16000000,
 			"currency": "elixir",
-			"duration": 1296000,
+			"duration": 777600,
 			"TH": 17
+		},
+		{
+			"level": 13,
+			"cost": 25000000,
+			"currency": "elixir",
+			"duration": 1123200,
+			"TH": 18
 		}
 	],
 	"Clan_Castle": [
@@ -728,10 +749,17 @@
 		},
 		{
 			"level": 13,
-			"cost": 20500000,
+			"cost": 19000000,
 			"currency": "elixir",
-			"duration": 1382400,
+			"duration": 950400,
 			"TH": 17
+		},
+		{
+			"level": 14,
+			"cost": 28000000,
+			"currency": "elixir",
+			"duration": 1209600,
+			"TH": 18
 		}
 	],
 	"Builder_Gold_Mine": [

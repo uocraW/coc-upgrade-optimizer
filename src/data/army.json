@@ -407,10 +407,17 @@
 		},
 		{
 			"level": 15,
-			"cost": 20000000,
+			"cost": 18000000,
+			"currency": "elixir",
+			"duration": 864000,
+			"TH": 17
+		},
+		{
+			"level": 16,
+			"cost": 27000000,
 			"currency": "elixir",
 			"duration": 1382400,
-			"TH": 17
+			"TH": 18
 		}
 	],
 	"Spell_Factory": [
@@ -544,10 +551,17 @@
 		},
 		{
 			"level": 11,
-			"cost": 21000000,
+			"cost": 17000000,
 			"currency": "elixir",
-			"duration": 1339200,
+			"duration": 820800,
 			"TH": 17
+		},
+		{
+			"level": 12,
+			"cost": 26000000,
+			"currency": "elixir",
+			"duration": 1166400,
+			"TH": 18
 		}
 	],
 	"Dark_Spell_Factory": [

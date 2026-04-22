@@ -1,5 +1,10 @@
 import cocData from './data/coc_data.json';
+import defenses from './data/defenses.json';
+import heroConfig from './data/heroes.json';
+import mapping from './data/mapping.json';
+import thConfig from './data/th.json';
 import {
+    constructTasks,
     generateSchedule,
     generateTestFixture,
     validateAgainstFixture,
@@ -7,6 +12,10 @@ import {
 
 function cloneData(data) {
     return JSON.parse(JSON.stringify(data));
+}
+
+function arrayToObject(entries) {
+    return Object.fromEntries(entries.map((entry) => Object.entries(entry)[0]));
 }
 
 describe('scheduler core scenarios', () => {
@@ -112,6 +121,178 @@ describe('scheduler core scenarios', () => {
             (task) => task.priority === 1,
         );
         expect(ongoing.length).toBeGreaterThan(0);
+    });
+
+    test('supports TH18 inputs without throwing during schedule generation', () => {
+        const th18Data = cloneData(cocData);
+        const townHall = th18Data.buildings.find((building) => {
+            return building.data === 1000001;
+        });
+
+        expect(townHall).toBeDefined();
+        townHall.lvl = 18;
+
+        expect(() => {
+            generateSchedule(
+                th18Data,
+                false,
+                'LPT',
+                false,
+                'home',
+                0,
+                '07:00',
+                '23:00',
+            );
+        }).not.toThrow();
+    });
+
+    test('ships TH18 defense data for merged and new structures', () => {
+        const th18Counts = arrayToObject(thConfig['18']);
+
+        expect(th18Counts.Merged_Cannon).toBe(3);
+        expect(th18Counts.Merged_Archer_Tower).toBe(3);
+        expect(th18Counts.Merged_Archer_Cannon).toBe(1);
+        expect(th18Counts.Firespitter).toBe(2);
+        expect(th18Counts.Super_Wizard_Tower).toBe(2);
+        expect(th18Counts.Revenge_Tower).toBe(1);
+
+        expect(defenses.Merged_Cannon.at(-1)).toMatchObject({
+            level: 4,
+            TH: 18,
+        });
+        expect(defenses.Merged_Archer_Tower.at(-1)).toMatchObject({
+            level: 4,
+            TH: 18,
+        });
+        expect(defenses.Merged_Archer_Cannon.at(-1)).toMatchObject({
+            level: 3,
+            TH: 18,
+        });
+        expect(defenses.Super_Wizard_Tower.at(-1)).toMatchObject({
+            level: 2,
+            TH: 18,
+        });
+        expect(defenses.Revenge_Tower.at(-1)).toMatchObject({
+            level: 2,
+            TH: 18,
+        });
+    });
+
+    test('maps Revenge Tower and Dragon Duke export ids', () => {
+        expect(mapping['1000086']).toBe('Revenge_Tower');
+        expect(mapping['28000007']).toBe('Dragon_Duke');
+        expect(heroConfig.Dragon_Duke[0]).toMatchObject({
+            level: 1,
+            HH: 9,
+        });
+        expect(heroConfig.Dragon_Duke.at(-1)).toMatchObject({
+            level: 25,
+            HH: 12,
+        });
+    });
+
+    test('supports TH18 guardians in imported village data', () => {
+        const th18Data = cloneData(cocData);
+        const townHall = th18Data.buildings.find((building) => {
+            return building.data === 1000001;
+        });
+
+        expect(townHall).toBeDefined();
+        townHall.lvl = 18;
+        th18Data.guardians = [
+            { data: 107000000, lvl: 1 },
+            { data: 107000001, lvl: 1 },
+        ];
+
+        const result = generateSchedule(
+            th18Data,
+            false,
+            'LPT',
+            false,
+            'home',
+            0,
+            '07:00',
+            '23:00',
+        );
+
+        expect(result.err[0]).toBe(false);
+        expect(result.sch.schedule.some((task) => task.id === 'Longshot')).toBe(
+            true,
+        );
+        expect(result.sch.schedule.some((task) => task.id === 'Smasher')).toBe(
+            true,
+        );
+    });
+
+    test('locks Super Wizard Tower creation behind Wizard Tower max-level tasks', () => {
+        const data = {
+            buildings: [
+                { data: 1000001, lvl: 18 },
+                { data: 1000019, lvl: 1, cnt: 1 },
+                { data: 1000011, lvl: 16, cnt: 2 },
+            ],
+            heroes: [],
+        };
+
+        const { tasks } = constructTasks(cloneData(data), 'LPT', false, 'home');
+        const taskByIndex = new Map(tasks.map((task) => [task.index, task]));
+        const wizardTowerTasks = tasks
+            .filter((task) => task.id === 'Wizard_Tower' && task.level === 17)
+            .sort((a, b) => a.iter - b.iter);
+        const superWizardTasks = tasks
+            .filter(
+                (task) => task.id === 'Super_Wizard_Tower' && task.level === 1,
+            )
+            .sort((a, b) => a.iter - b.iter);
+
+        expect(wizardTowerTasks).toHaveLength(2);
+        expect(superWizardTasks).toHaveLength(2);
+
+        for (const task of superWizardTasks) {
+            const predecessorTasks = task.pred.map((idx) => taskByIndex.get(idx));
+            expect(predecessorTasks).toHaveLength(1);
+            expect(predecessorTasks[0]).toMatchObject({
+                id: 'Wizard_Tower',
+                level: 17,
+            });
+        }
+    });
+
+    test('locks Multi Archer Tower creation behind two max Archer Towers', () => {
+        const data = {
+            buildings: [
+                { data: 1000001, lvl: 16 },
+                { data: 1000019, lvl: 1, cnt: 1 },
+                { data: 1000009, lvl: 20, cnt: 4 },
+            ],
+            heroes: [],
+        };
+
+        const { tasks } = constructTasks(cloneData(data), 'LPT', false, 'home');
+        const taskByIndex = new Map(tasks.map((task) => [task.index, task]));
+        const archerTowerTasks = tasks.filter(
+            (task) => task.id === 'Archer_Tower' && task.level === 21,
+        );
+        const mergedArcherTasks = tasks
+            .filter(
+                (task) =>
+                    task.id === 'Merged_Archer_Tower' && task.level === 1,
+            )
+            .sort((a, b) => a.iter - b.iter);
+
+        expect(archerTowerTasks).toHaveLength(4);
+        expect(mergedArcherTasks).toHaveLength(2);
+
+        for (const task of mergedArcherTasks) {
+            const predecessorTasks = task.pred.map((idx) => taskByIndex.get(idx));
+            expect(predecessorTasks).toHaveLength(2);
+            predecessorTasks.forEach((pred) =>
+                expect(pred).toMatchObject({
+                    id: 'Archer_Tower',
+                    level: 21,
+                }),
+            );
+        }
     });
 
     test('Phase 8: all 5 objective profiles generate valid schedules on fixture data', () => {

@@ -4,14 +4,40 @@
  * Returns structured validation results with warnings and errors
  */
 
+import mapping from './data/mapping.json' with { type: 'json' };
+import heroConfig from './data/heroes.json' with { type: 'json' };
+
 const REQUIRED_BASE_FIELDS = ['buildings', 'heroes'];
 const REQUIRED_BUILDER_BASE_FIELDS = ['buildings2', 'heroes2'];
+const FALLBACK_HERO_MAX_LEVEL = 120;
+
+const HOME_HERO_MAX_LEVELS = Object.fromEntries(
+    Object.entries(heroConfig).map(([heroName, levels]) => [
+        heroName,
+        Math.max(
+            0,
+            ...levels.map((entry) => Number(entry?.level || entry?.lvl || 0)),
+        ),
+    ]),
+);
+
+function getExpectedHeroMaxLevel(heroId) {
+    const heroName = mapping[heroId];
+    return HOME_HERO_MAX_LEVELS[heroName] || FALLBACK_HERO_MAX_LEVEL;
+}
+
+function getHeroWarningLabel(heroId, idx) {
+    const heroName = mapping[heroId];
+    return heroName ? `${heroName} (index ${idx})` : `index ${idx}`;
+}
 
 // Reserved for future validation enhancements
 // eslint-disable-next-line no-unused-vars
 const VALID_BUILDING_FIELDS = ['data', 'lvl', 'cnt', 'timer', 'gear_up'];
 // eslint-disable-next-line no-unused-vars
 const VALID_HERO_FIELDS = ['data', 'lvl', 'timer'];
+// eslint-disable-next-line no-unused-vars
+const VALID_GUARDIAN_FIELDS = ['data', 'lvl', 'timer', 'helper_timer'];
 
 /**
  * Comprehensive JSON input validation
@@ -61,6 +87,17 @@ export function validatePlayerJSON(dataJSON, baseMode = 'home') {
     const validBuildings = sanitizedData[buildingsKey].filter((b, idx) => {
         if (!b || typeof b !== 'object') {
             invalidBuildingCount++;
+            return false;
+        }
+
+        // Some export entries (for example Crafting Station loadouts) are
+        // structured metadata rather than schedulable buildings. Skip them
+        // silently so valid TH18 exports don't show a false malformed warning.
+        if (
+            b.data !== undefined &&
+            b.lvl === undefined &&
+            Array.isArray(b.types)
+        ) {
             return false;
         }
 
@@ -134,8 +171,11 @@ export function validatePlayerJSON(dataJSON, baseMode = 'home') {
             return false;
         }
 
-        if (h.lvl < 1 || h.lvl > 65) {
-            warnings.push(`Hero index ${idx} has unusual level: ${h.lvl}`);
+        const expectedMaxLevel = getExpectedHeroMaxLevel(h.data);
+        if (h.lvl < 1 || h.lvl > expectedMaxLevel) {
+            warnings.push(
+                `Hero ${getHeroWarningLabel(h.data, idx)} has unusual level: ${h.lvl} (expected 1-${expectedMaxLevel})`,
+            );
         }
 
         // Coerce timer to number if present
@@ -161,6 +201,65 @@ export function validatePlayerJSON(dataJSON, baseMode = 'home') {
     }
 
     sanitizedData[heroesKey] = validHeroes;
+
+    // Validate guardians array if present (TH18+)
+    if (baseMode === 'home' && dataJSON.guardians !== undefined) {
+        if (!Array.isArray(dataJSON.guardians)) {
+            warnings.push('guardians is not an array, ignoring');
+            delete sanitizedData.guardians;
+        } else {
+            let invalidGuardianCount = 0;
+            const validGuardians = sanitizedData.guardians.filter((g, idx) => {
+                if (!g || typeof g !== 'object') {
+                    invalidGuardianCount++;
+                    return false;
+                }
+
+                if (g.data === undefined || g.lvl === undefined) {
+                    invalidGuardianCount++;
+                    return false;
+                }
+
+                if (typeof g.data !== 'number' || typeof g.lvl !== 'number') {
+                    invalidGuardianCount++;
+                    return false;
+                }
+
+                if (g.lvl < 1 || g.lvl > 10) {
+                    warnings.push(
+                        `Guardian index ${idx} has unusual level: ${g.lvl}`,
+                    );
+                }
+
+                for (const timerField of ['timer', 'helper_timer']) {
+                    if (
+                        g[timerField] !== undefined &&
+                        typeof g[timerField] === 'string'
+                    ) {
+                        const parsed = parseInt(g[timerField], 10);
+                        if (!isNaN(parsed)) {
+                            g[timerField] = parsed;
+                        } else {
+                            warnings.push(
+                                `Guardian ${g.data} has non-numeric ${timerField}: "${g[timerField]}", ignoring`,
+                            );
+                            delete g[timerField];
+                        }
+                    }
+                }
+
+                return true;
+            });
+
+            if (invalidGuardianCount > 0) {
+                warnings.push(
+                    `${invalidGuardianCount} malformed guardian(s) were skipped (missing data or lvl fields)`,
+                );
+            }
+
+            sanitizedData.guardians = validGuardians;
+        }
+    }
 
     // Validate timestamp if present
     if (dataJSON.timestamp !== undefined) {
@@ -222,9 +321,11 @@ export function generatePreflight(data, baseMode) {
 
     const buildings = data[buildingsKey] || [];
     const heroes = data[heroesKey] || [];
+    const guardians = baseMode === 'home' ? data.guardians || [] : [];
 
     const ongoingBuildings = buildings.filter((b) => b.timer).length;
     const ongoingHeroes = heroes.filter((h) => h.timer).length;
+    const ongoingGuardians = guardians.filter((g) => g.timer).length;
 
     return {
         baseMode,
@@ -232,10 +333,15 @@ export function generatePreflight(data, baseMode) {
         ongoingBuildings,
         totalHeroes: heroes.length,
         ongoingHeroes,
+        totalGuardians: guardians.length,
+        ongoingGuardians,
         message:
             `Ready to schedule: ${buildings.length} buildings ` +
             `(${ongoingBuildings} upgrading), ${heroes.length} heroes ` +
-            `(${ongoingHeroes} upgrading)`,
+            `(${ongoingHeroes} upgrading)` +
+            (baseMode === 'home'
+                ? `, ${guardians.length} guardians (${ongoingGuardians} upgrading)`
+                : ''),
     };
 }
 

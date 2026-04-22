@@ -6,6 +6,7 @@ import BuilderTimeline from './BuilderTimeline.jsx';
 import ActiveTimeInput from './ActiveTimeInput.jsx';
 import { validatePlayerJSON, generatePreflight } from './inputValidator.js';
 import { auditMappingCoverage, validateAllConfigs } from './configValidator.js';
+import { getDisplayName, normalizeDisplayLanguage } from './displayNames.js';
 import {
     ValidationMessageManager,
     createStickyErrorAlert,
@@ -175,7 +176,8 @@ const getTaskCategory = (id = '') => {
         name.includes('queen') ||
         name.includes('warden') ||
         name.includes('champion') ||
-        name.includes('prince')
+        name.includes('prince') ||
+        name.includes('duke')
     )
         return 'Hero';
     if (
@@ -228,6 +230,14 @@ const buildStrategyOptions = () => {
 };
 
 const STRATEGY_COPY = buildStrategyOptions();
+const HIDDEN_STRATEGY_KEYS = new Set([
+    'TimeMax',
+    'HeroAvailability',
+    'RushMode',
+]);
+const VISIBLE_STRATEGY_ENTRIES = Object.entries(STRATEGY_COPY).filter(
+    ([key]) => !HIDDEN_STRATEGY_KEYS.has(key),
+);
 
 const BOOST_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 
@@ -278,6 +288,7 @@ export default function App() {
                 baseVillage: 'home',
                 fixedPriority: false,
                 preferredStrategy: 'LPT',
+                displayLanguage: 'zh',
             }),
         [],
     );
@@ -296,6 +307,9 @@ export default function App() {
 
     const [preferredStrategy, setPreferredStrategy] = useState(() => {
         return persistedSettings.preferredStrategy === 'SPT' ? 'SPT' : 'LPT';
+    });
+    const [displayLanguage, setDisplayLanguage] = useState(() => {
+        return normalizeDisplayLanguage(persistedSettings.displayLanguage);
     });
     const [lastRunSignature, setLastRunSignature] = useState(null);
     const [scheduleStale, setScheduleStale] = useState(false);
@@ -317,8 +331,9 @@ export default function App() {
             baseVillage: village,
             fixedPriority: priority,
             preferredStrategy,
+            displayLanguage,
         });
-    }, [selectedPct, village, priority, preferredStrategy]);
+    }, [selectedPct, village, priority, preferredStrategy, displayLanguage]);
 
     const scheduleMode = React.useMemo(
         () => (scheduleType.includes('SPT') ? 'SPT' : 'LPT'),
@@ -416,6 +431,7 @@ export default function App() {
         setSelectedPct(0);
         setVillage('home');
         setPriority(false);
+        setDisplayLanguage('zh');
         setActiveTime({ enabled: false, start: null, end: null });
         setPreflightSummary(null);
         setMappingWarnings(null);
@@ -759,6 +775,15 @@ export default function App() {
                                         ? ` (${preflightSummary.ongoingHeroes} upgrading)`
                                         : ''}
                                 </div>
+                                {preflightSummary.totalGuardians > 0 && (
+                                    <div>
+                                        ✓ {preflightSummary.totalGuardians}{' '}
+                                        guardians
+                                        {preflightSummary.ongoingGuardians > 0
+                                            ? ` (${preflightSummary.ongoingGuardians} upgrading)`
+                                            : ''}
+                                    </div>
+                                )}
                                 {preflightSummary.message && (
                                     <div className="text-dark-400">
                                         {preflightSummary.message}
@@ -816,7 +841,7 @@ export default function App() {
                                         }
                                         className="input-modern w-full font-bold text-sm py-2 cursor-pointer"
                                     >
-                                        {Object.entries(STRATEGY_COPY).map(
+                                        {VISIBLE_STRATEGY_ENTRIES.map(
                                             ([key, meta]) => (
                                                 <option key={key} value={key}>
                                                     {meta.label}
@@ -834,6 +859,29 @@ export default function App() {
                             </div>
 
                             <div className="glass-card rounded-2xl p-4 space-y-3 bg-dark-750 border border-dark-700">
+                                <div>
+                                    <label
+                                        htmlFor="display-language-select"
+                                        className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-2"
+                                    >
+                                        Display Language
+                                    </label>
+                                    <select
+                                        id="display-language-select"
+                                        value={displayLanguage}
+                                        onChange={(e) =>
+                                            setDisplayLanguage(
+                                                normalizeDisplayLanguage(
+                                                    e.target.value,
+                                                ),
+                                            )
+                                        }
+                                        className="input-modern w-full font-bold text-sm py-2 cursor-pointer"
+                                    >
+                                        <option value="zh">中文</option>
+                                        <option value="en">English</option>
+                                    </select>
+                                </div>
                                 <div>
                                     <label className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-2">
                                         Select Village
@@ -1065,16 +1113,10 @@ export default function App() {
                                             <div className="flex items-center justify-between gap-4 p-3">
                                                 <div className="flex-1">
                                                     <div className="font-black text-base text-dark-100 mb-1.5 group-hover:text-amber-400 transition-colors">
-                                                        {String(task.id)
-                                                            .replaceAll(
-                                                                '_',
-                                                                ' ',
-                                                            )
-                                                            .replace(
-                                                                'Builder',
-                                                                '',
-                                                            )
-                                                            .trim()}
+                                                        {getDisplayName(
+                                                            task.id,
+                                                            displayLanguage,
+                                                        )}
                                                         <span className="ml-2 px-2.5 py-0.5 bg-amber-400/20 text-amber-400 rounded-lg text-xs font-bold">
                                                             L{task.level}
                                                         </span>
@@ -1156,6 +1198,7 @@ export default function App() {
                                         doneKeys={doneKeys}
                                         onToggle={toggleDone}
                                         taskKeyFn={taskKey}
+                                        displayLanguage={displayLanguage}
                                     />
                                 </div>
                             </div>
@@ -1187,6 +1230,7 @@ export default function App() {
                                             doneKeys={doneKeys}
                                             onToggle={toggleDone}
                                             taskKeyFn={taskKey}
+                                            displayLanguage={displayLanguage}
                                         />
                                     </div>
                                 </div>

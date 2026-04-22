@@ -10,6 +10,47 @@ import bhConfig from './data/bh.json' with { type: 'json' };
 
 const DEBUG = process.env.REACT_APP_DEBUG_VALIDATION === 'true' || false;
 
+function getConfigLevelKeys(config) {
+    if (!config || typeof config !== 'object') return [];
+    return Object.keys(config)
+        .map((key) => Number(key))
+        .filter((value) => Number.isInteger(value) && value > 0)
+        .sort((a, b) => a - b);
+}
+
+function getConfigLevelCount(config) {
+    if (Array.isArray(config)) return config.length;
+    return getConfigLevelKeys(config).length;
+}
+
+function getConfigLevelEntry(config, level) {
+    if (Array.isArray(config)) {
+        return config[level - 1];
+    }
+
+    if (!config || typeof config !== 'object') return undefined;
+    return config[String(level)];
+}
+
+function summarizeUnmappedIds(unmappedIds) {
+    const grouped = new Map();
+
+    for (const item of unmappedIds) {
+        const key = `${item.id}:${item.type}`;
+        const existing = grouped.get(key);
+        if (existing) {
+            existing.count += 1;
+        } else {
+            grouped.set(key, { ...item, count: 1 });
+        }
+    }
+
+    return Array.from(grouped.values()).map((item) => {
+        const suffix = item.count > 1 ? ` x${item.count}` : '';
+        return `ID ${item.id} (${item.type})${suffix}`;
+    });
+}
+
 /**
  * Audits mapping coverage for known building/hero IDs
  * @param {Object} playerData - Player data from JSON export
@@ -19,6 +60,7 @@ const DEBUG = process.env.REACT_APP_DEBUG_VALIDATION === 'true' || false;
 export function auditMappingCoverage(playerData, baseMode = 'home') {
     const buildingsKey = baseMode === 'home' ? 'buildings' : 'buildings2';
     const heroesKey = baseMode === 'home' ? 'heroes' : 'heroes2';
+    const guardians = baseMode === 'home' ? playerData.guardians || [] : [];
 
     const buildings = playerData[buildingsKey] || [];
     const heroes = playerData[heroesKey] || [];
@@ -48,7 +90,18 @@ export function auditMappingCoverage(playerData, baseMode = 'home') {
         }
     }
 
-    const totalItems = buildings.length + heroes.length;
+    // Check guardian mappings
+    for (const guardian of guardians) {
+        if (!mapping[guardian.data]) {
+            unmappedIds.push({
+                id: guardian.data,
+                type: 'guardian',
+                level: guardian.lvl,
+            });
+        }
+    }
+
+    const totalItems = buildings.length + heroes.length + guardians.length;
     const coverage =
         totalItems > 0
             ? ((totalItems - unmappedIds.length) / totalItems) * 100
@@ -56,7 +109,7 @@ export function auditMappingCoverage(playerData, baseMode = 'home') {
 
     if (unmappedIds.length > 0) {
         warnings.push(
-            `${unmappedIds.length} item(s) missing from mapping: ${unmappedIds.map((u) => `ID ${u.id} (${u.type})`).join(', ')}`,
+            `${unmappedIds.length} item(s) missing from mapping: ${summarizeUnmappedIds(unmappedIds).join(', ')}`,
         );
     }
 
@@ -118,28 +171,29 @@ export function validatePriorityMap() {
 export function validateTHBHConfig(currentTH, baseMode = 'home') {
     const warnings = [];
     const config = baseMode === 'home' ? thConfig : bhConfig;
+    const levelCount = getConfigLevelCount(config);
 
-    if (!Array.isArray(config)) {
-        warnings.push(`${baseMode} config is not an array`);
+    if (levelCount === 0) {
+        warnings.push(`${baseMode} config is empty or has invalid structure`);
         return { valid: false, warnings };
     }
 
-    if (currentTH < 1 || currentTH > config.length) {
+    if (currentTH < 1 || currentTH > levelCount) {
         warnings.push(
-            `TH level ${currentTH} is outside valid range: 1-${config.length}`,
+            `TH level ${currentTH} is outside valid range: 1-${levelCount}`,
         );
         return { valid: false, warnings };
     }
 
     // Verify config structure for current TH
-    const thLevelConfig = config[currentTH - 1];
+    const thLevelConfig = getConfigLevelEntry(config, currentTH);
     if (!thLevelConfig) {
         warnings.push(`No config found for ${baseMode} TH level ${currentTH}`);
         return { valid: false, warnings };
     }
 
-    // Check if it's an object (expected structure)
-    if (typeof thLevelConfig !== 'object' || Array.isArray(thLevelConfig)) {
+    // Config entries are arrays of single-key objects in this repo.
+    if (!Array.isArray(thLevelConfig)) {
         warnings.push(`TH level ${currentTH} config has unexpected structure`);
         return { valid: false, warnings };
     }
@@ -197,8 +251,8 @@ export function generateDataIntegrityReport() {
                 entryCount: Object.keys(priority).length,
             },
             config: {
-                thLevels: thConfig.length,
-                bhLevels: bhConfig.length,
+                thLevels: getConfigLevelCount(thConfig),
+                bhLevels: getConfigLevelCount(bhConfig),
             },
         },
         issues: [],
@@ -236,8 +290,9 @@ export function generateDataIntegrityReport() {
 
     // Check for empty arrays in config
     let emptyLevels = 0;
-    for (let i = 0; i < thConfig.length; i++) {
-        if (!thConfig[i] || Object.keys(thConfig[i]).length === 0) {
+    for (const level of getConfigLevelKeys(thConfig)) {
+        const config = getConfigLevelEntry(thConfig, level);
+        if (!config || Object.keys(config).length === 0) {
             emptyLevels++;
         }
     }
@@ -291,17 +346,17 @@ export function lintDataConsistency() {
     }
 
     // Check 3: TH/BH config has reasonable structure
-    for (let level = 0; level < thConfig.length; level++) {
-        const config = thConfig[level];
+    for (const level of getConfigLevelKeys(thConfig)) {
+        const config = getConfigLevelEntry(thConfig, level);
         if (!config || typeof config !== 'object') {
             lintResults.errors.push(
-                `TH level ${level + 1} has invalid structure`,
+                `TH level ${level} has invalid structure`,
             );
         } else {
             const buildingCount = Object.keys(config).length;
             if (buildingCount === 0) {
                 lintResults.warnings.push(
-                    `TH level ${level + 1} has no buildings`,
+                    `TH level ${level} has no buildings`,
                 );
             }
         }

@@ -8,9 +8,13 @@ export const BUILDING_COLORS = {
   "Barracks": "#B2C0CF",
   "Laboratory": "#ED97DB",
   "Cannon": "#D1C8C2",
+  "Merged_Cannon": "#B8AEA8",
   "Archer_Tower": "#9BC289",
+  "Merged_Archer_Tower": "#7FA86B",
+  "Merged_Archer_Cannon": "#86A699",
   "Wall": "#d97706",
   "Wizard_Tower": "#AAA1BA",
+  "Super_Wizard_Tower": "#7B6FB6",
   "Air_Defense": "#F5C08F",
   "Mortar": "#D5D6DF",
   "Clan_Castle": "#B7B9B3",
@@ -25,10 +29,14 @@ export const BUILDING_COLORS = {
   "Air_Sweeper": "#FF9590",
   "Dark_Spell_Factory": "#F0A7A7",
   "Bomb_Tower": "#B8BFD8",
+  "Firespitter": "#E49473",
   "Eagle_Artillery": "#F8E3DA", //
   "Scatter_Shot": "#A6CBDF", //
   "Spell_Tower": "#9B92AF", //
   "Monolith": "#ADA8C2", //
+  "Revenge_Tower": "#8C4E5E",
+  "Longshot": "#5f7fd3",
+  "Smasher": "#d4765d",
   "Workshop": "#D78D74",//
   "Pet_House": "#66B3A3",
   "Builder_Gold_Mine": "#FEEB80",
@@ -60,5 +68,6 @@ export const BUILDING_COLORS = {
   "Archer_Queen": "#957bd0",
   "Grand_Warden": "#cb7ad1",
   "Royal_Champion": "#698ce3",
-  "Minion_Prince": "#3bb5dd"
+  "Minion_Prince": "#3bb5dd",
+  "Dragon_Duke": "#5aa0d6"
 };

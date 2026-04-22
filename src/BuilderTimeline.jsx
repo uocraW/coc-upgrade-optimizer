@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { DataSet, Timeline } from 'vis-timeline/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import { BUILDING_COLORS } from './colorMap';
+import { getDisplayName } from './displayNames.js';
 
 const STYLE_ID = 'gantt-dark-theme';
 
@@ -55,6 +56,7 @@ export default function BuilderTimeline({
     doneKeys,
     onToggle,
     taskKeyFn,
+    displayLanguage = 'zh',
 }) {
     const ref = useRef(null);
     const timelineRef = useRef(null);
@@ -144,10 +146,7 @@ export default function BuilderTimeline({
             const trackingKey = getTaskTrackingKey(t, i, taskKeyFn);
             const isDone = doneKeys?.has(trackingKey);
 
-            const label = `${String(t.id)
-                .replaceAll('_', ' ')
-                .replace('Builder', '')
-                .trim()}${t.level ? ` L${t.level}` : ''} ${t.iter ? `#${t.iter}` : ''}`;
+            const label = `${getDisplayName(t.id, displayLanguage)}${t.level ? ` L${t.level}` : ''} ${t.iter ? `#${t.iter}` : ''}`;
             const durLabel = formatDuration(
                 Number(t.duration || endEpoch - (t.start || 0)),
             );
@@ -227,7 +226,7 @@ export default function BuilderTimeline({
         };
         // doneKeys intentionally omitted - handled by incremental update effect below
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tasks, start, height, onToggle, taskKeyFn]);
+    }, [tasks, start, height, onToggle, taskKeyFn, displayLanguage]);
 
     useEffect(() => {
         if (!itemsRef.current || !tasks.length) return;
@@ -242,10 +241,7 @@ export default function BuilderTimeline({
             const durLabel = formatDuration(
                 Number(task.duration || endEpoch - (task.start || 0)),
             );
-            const label = `${String(task.id)
-                .replaceAll('_', ' ')
-                .replace('Builder', '')
-                .trim()}${task.level ? ` L${task.level}` : ''} ${task.iter ? `#${task.iter}` : ''}`;
+            const label = `${getDisplayName(task.id, displayLanguage)}${task.level ? ` L${task.level}` : ''} ${task.iter ? `#${task.iter}` : ''}`;
             const content = `${label} (${durLabel})`;
 
             return {
@@ -256,7 +252,7 @@ export default function BuilderTimeline({
         });
 
         itemsRef.current.update(updates);
-    }, [doneKeys, tasks, taskKeyFn]);
+    }, [doneKeys, tasks, taskKeyFn, displayLanguage]);
 
     return (
         <div

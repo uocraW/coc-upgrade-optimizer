@@ -7,9 +7,9 @@ This guide provides step-by-step instructions for deploying the CoC Upgrade Trac
 ## Overview
 
 **Deployment Platform:** GitHub Pages  
-**Repository:** SamBro2901/coc-upgrade-optimizer  
+**Repository:** uocraW/coc-upgrade-optimizer  
 **Branch:** gh-pages (auto-managed by gh-pages package)  
-**Production URL:** https://sambro2901.github.io/coc-upgrade-optimizer/  
+**Production URL:** https://uocraW.github.io/coc-upgrade-optimizer/  
 **Build Tool:** react-scripts (Create React App)  
 **Deploy Tool:** gh-pages npm package
 
@@ -80,7 +80,7 @@ npm test -- --watchAll=false
 Generate optimized production build:
 
 ```bash
-npm run build
+npm run build:web
 ```
 
 **Expected Output:**
@@ -143,7 +143,7 @@ npm run deploy
 ```
 
 **What This Does:**
-1. Runs `predeploy` script (`npm run build`)
+1. Runs `predeploy` script (`npm run build:web`)
 2. Pushes `build/` contents to `gh-pages` branch
 3. GitHub Pages automatically serves from `gh-pages` branch
 
@@ -163,7 +163,7 @@ Published
 GitHub Pages may take 1-5 minutes to serve updated content:
 
 - [ ] Open GitHub repository → Settings → Pages
-- [ ] Verify "Your site is published at https://sambro2901.github.io/coc-upgrade-optimizer/"
+- [ ] Verify "Your site is published at https://uocraW.github.io/coc-upgrade-optimizer/"
 - [ ] Note deployment timestamp
 - [ ] Wait ~2 minutes for CDN propagation
 
@@ -171,7 +171,7 @@ GitHub Pages may take 1-5 minutes to serve updated content:
 
 Open production URL and perform initial validation:
 
-**URL:** https://sambro2901.github.io/coc-upgrade-optimizer/
+**URL:** https://uocraW.github.io/coc-upgrade-optimizer/
 
 **Quick Validation:**
 - [ ] Page loads without errors
@@ -369,7 +369,7 @@ git config --global credential.helper store
 # Verify homepage in package.json
 cat package.json | grep homepage
 
-# Should be: "homepage": "https://sambro2901.github.io/coc-upgrade-optimizer/"
+# Should be: "homepage": "https://uocraW.github.io/coc-upgrade-optimizer/"
 
 # Check gh-pages branch exists and has contents
 git checkout gh-pages

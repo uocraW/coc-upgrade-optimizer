@@ -16,6 +16,24 @@ import playerData from './data/coc_data.json' with { type: 'json' };
 const DEBUG_SCHEDULER =
     process.env.REACT_APP_DEBUG_SCHEDULER === 'true' || false;
 
+const HOME_BUILDING_UNLOCK_RULES = {
+    Super_Wizard_Tower: {
+        requirements: [{ id: 'Wizard_Tower', count: 1, level: 17 }],
+    },
+    Merged_Archer_Tower: {
+        requirements: [{ id: 'Archer_Tower', count: 2, level: 21 }],
+    },
+    Merged_Cannon: {
+        requirements: [{ id: 'Cannon', count: 2, level: 21 }],
+    },
+    Merged_Archer_Cannon: {
+        requirements: [
+            { id: 'Archer_Tower', count: 1, level: 21 },
+            { id: 'Cannon', count: 1, level: 21 },
+        ],
+    },
+};
+
 /**
  * Multi-Objective Optimization Profiles (Phase 8)
  * Each profile defines weights for competing optimization objectives
@@ -154,6 +172,7 @@ function calculateHeroAvailScore(task, context) {
         'Archer_Queen',
         'Grand_Warden',
         'Royal_Champion',
+        'Dragon_Duke',
     ];
     const isHero = heroIds.includes(task.id);
 
@@ -232,7 +251,7 @@ function applyBoost(durationSeconds, boost) {
     return finalSeconds;
 }
 
-function constructTasks(
+export function constructTasks(
     inputData,
     scheme = 'LPT',
     priori = false,
@@ -255,6 +274,7 @@ function constructTasks(
         // Home Village
         pData = [...inputData.buildings];
         if (inputData.traps) pData.push(...inputData.traps);
+        if (inputData.guardians) pData.push(...inputData.guardians);
         hData = inputData.heroes;
     } else {
         // Builder Base
@@ -346,7 +366,12 @@ function constructTasks(
         if (currCount < maxBuilds[b]) {
             if (builderArmy.includes(b)) {
                 let task = itemData[b]
-                    .filter((item) => item.TH > 0 && item.TH <= currTH)
+                    .filter(
+                        (item) =>
+                            item.TH > 0 &&
+                            item.TH <= currTH &&
+                            item.duration > 0,
+                    )
                     .sort((a, b) => b.level - a.level);
                 task = task.splice(0, maxBuilds[b] - currCount).map((item) => ({
                     id: b,
@@ -358,7 +383,12 @@ function constructTasks(
                 tasks.push(...task);
             } else {
                 let task = itemData[b]
-                    .filter((item) => item.TH > 0 && item.TH <= currTH)
+                    .filter(
+                        (item) =>
+                            item.TH > 0 &&
+                            item.TH <= currTH &&
+                            item.duration > 0,
+                    )
                     .map((item) => ({
                         id: b,
                         level: item.level,
@@ -440,7 +470,9 @@ function constructTasks(
                 console.log('Adding new building:', d, 'count:', val);
             let newTask =
                 itemData[d]
-                    ?.filter((item) => item.TH <= currTH)
+                    ?.filter(
+                        (item) => item.TH <= currTH && item.duration > 0,
+                    )
                     ?.map((item) => ({
                         id: d,
                         level: item.level,
@@ -565,6 +597,7 @@ function lockPredecessors(playerData, tasks, warnings = []) {
         'Minion_Prince',
         'Grand_Warden',
         'Royal_Champion',
+        'Dragon_Duke',
     ];
 
     // Add indices and canonical keys to all tasks
@@ -612,10 +645,116 @@ function lockPredecessors(playerData, tasks, warnings = []) {
         }
     }
 
+    lockHomeBuildingUnlockPredecessors(playerData, tasks, taskByKey, warnings);
+
     // Validate predecessor graph for cycles and issues
     validatePredecessorGraph(tasks, warnings);
 
     return tasks;
+}
+
+function buildExistingHomeBuildingInstances(playerData) {
+    const instancesById = new Map();
+    const buildings = playerData.buildings || [];
+
+    for (const building of buildings) {
+        const buildingName = mapping[building.data];
+        if (!buildingName) continue;
+
+        const quantity = building.timer ? 1 : building.cnt || building.gear_up || 1;
+        const instances = instancesById.get(buildingName) || [];
+
+        for (let i = 0; i < quantity; i++) {
+            instances.push({
+                id: buildingName,
+                iter: instances.length + 1,
+                level: building.lvl,
+                timer: Boolean(building.timer),
+            });
+        }
+
+        instancesById.set(buildingName, instances);
+    }
+
+    return instancesById;
+}
+
+function getUnlockSourceSortScore(instance, requiredLevel) {
+    const committedLevel = instance.level + (instance.timer ? 1 : 0);
+    return Math.max(0, requiredLevel - committedLevel);
+}
+
+function lockHomeBuildingUnlockPredecessors(
+    playerData,
+    tasks,
+    taskByKey,
+    warnings = [],
+) {
+    if (!Array.isArray(playerData.buildings) || playerData.buildings.length === 0) {
+        return;
+    }
+
+    const buildingInstances = buildExistingHomeBuildingInstances(playerData);
+
+    for (const [targetId, rule] of Object.entries(HOME_BUILDING_UNLOCK_RULES)) {
+        const targetTasks = tasks
+            .filter((task) => task.id === targetId && task.level === 1)
+            .sort((a, b) => Number(a.iter) - Number(b.iter));
+
+        if (targetTasks.length === 0) continue;
+
+        for (const requirement of rule.requirements) {
+            const sourceInstances = [
+                ...(buildingInstances.get(requirement.id) || []),
+            ].sort((a, b) => {
+                return (
+                    getUnlockSourceSortScore(a, requirement.level) -
+                        getUnlockSourceSortScore(b, requirement.level) ||
+                    b.level - a.level ||
+                    Number(a.iter) - Number(b.iter)
+                );
+            });
+
+            const totalSourcesNeeded = targetTasks.length * requirement.count;
+            if (sourceInstances.length < totalSourcesNeeded) {
+                warnings.push(
+                    `Warning: ${targetId} needs ${totalSourcesNeeded} ${requirement.id} instance(s) at level ${requirement.level}, but only ${sourceInstances.length} source instance(s) were found.`,
+                );
+            }
+
+            let sourceOffset = 0;
+            for (const targetTask of targetTasks) {
+                const allocatedSources = sourceInstances.slice(
+                    sourceOffset,
+                    sourceOffset + requirement.count,
+                );
+                sourceOffset += requirement.count;
+
+                if (allocatedSources.length < requirement.count) break;
+
+                for (const source of allocatedSources) {
+                    if (source.level >= requirement.level) continue;
+
+                    const requiredTask = taskByKey.get(
+                        generateTaskKey(
+                            requirement.id,
+                            source.iter,
+                            requirement.level,
+                        ),
+                    );
+
+                    if (!requiredTask) {
+                        warnings.push(
+                            `Warning: ${targetId} requires ${requirement.id} instance ${source.iter} at level ${requirement.level}, but that prerequisite task was not found in the schedule.`,
+                        );
+                        continue;
+                    }
+
+                    tasks[targetTask.index].pred.push(requiredTask.index);
+                }
+            }
+        }
+    }
 }
 
 /**
