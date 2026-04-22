@@ -18,6 +18,23 @@ function arrayToObject(entries) {
     return Object.fromEntries(entries.map((entry) => Object.entries(entry)[0]));
 }
 
+function isWithinWindow(timeString, startTime, endTime) {
+    const toMinutes = (value) => {
+        const [hours, minutes] = value.split(':').map(Number);
+        return hours * 60 + minutes;
+    };
+
+    const current = toMinutes(timeString);
+    const start = toMinutes(startTime);
+    const end = toMinutes(endTime);
+
+    if (start <= end) {
+        return current >= start && current <= end;
+    }
+
+    return current >= start || current <= end;
+}
+
 describe('scheduler core scenarios', () => {
     test('returns actionable error for invalid JSON payload', () => {
         const result = generateSchedule(null);
@@ -102,6 +119,39 @@ describe('scheduler core scenarios', () => {
         expect(result.err[0]).toBe(false);
         expect(result.sch.schedule.length).toBeGreaterThan(0);
         expect(result.numBuilders).toBeGreaterThanOrEqual(1);
+    });
+
+    test('supports overnight active-time windows for task starts', () => {
+        const result = generateSchedule(
+            cloneData(cocData),
+            false,
+            'LPT',
+            false,
+            'home',
+            0,
+            '10:00',
+            '02:00',
+        );
+
+        expect(result.err[0]).toBe(false);
+        expect(result.sch.schedule.length).toBeGreaterThan(0);
+
+        const nonOngoingTasks = result.sch.schedule.filter(
+            (task) => task.priority !== 1,
+        );
+
+        expect(nonOngoingTasks.length).toBeGreaterThan(0);
+        expect(
+            nonOngoingTasks.every((task) =>
+                isWithinWindow(
+                    new Date(task.start * 1000)
+                        .toTimeString()
+                        .slice(0, 5),
+                    '10:00',
+                    '02:00',
+                ),
+            ),
+        ).toBe(true);
     });
 
     test('keeps ongoing upgrades (priority 1) in scheduled output', () => {
@@ -222,6 +272,88 @@ describe('scheduler core scenarios', () => {
         expect(result.sch.schedule.some((task) => task.id === 'Smasher')).toBe(
             true,
         );
+    });
+
+    test('keeps multiple selected heroes awake at the requested time', () => {
+        const data = cloneData(cocData);
+        data.heroes = data.heroes.map((hero) => {
+            if (hero.data === 28000000 || hero.data === 28000001) {
+                const { timer, ...rest } = hero;
+                return rest;
+            }
+            return hero;
+        });
+        const heroAwakeTimestamp = cocData.timestamp + 3 * 24 * 60 * 60;
+        const result = generateSchedule(
+            data,
+            false,
+            'LPT',
+            false,
+            'home',
+            0,
+            '07:00',
+            '23:00',
+            {
+                heroAwakeMoments: [
+                    {
+                        heroId: 'Barbarian_King',
+                        timestamp: heroAwakeTimestamp,
+                    },
+                    {
+                        heroId: 'Archer_Queen',
+                        timestamp: heroAwakeTimestamp,
+                    },
+                ],
+            },
+        );
+
+        expect(result.err[0]).toBe(false);
+        expect(
+            result.sch.schedule.some((task) => task.id === 'Barbarian_King'),
+        ).toBe(true);
+        expect(
+            result.sch.schedule.some((task) => task.id === 'Archer_Queen'),
+        ).toBe(true);
+        expect(
+            result.sch.schedule.find(
+                (task) =>
+                    ['Barbarian_King', 'Archer_Queen'].includes(task.id) &&
+                    task.start < heroAwakeTimestamp &&
+                    task.end > heroAwakeTimestamp,
+            ),
+        ).toBeUndefined();
+    });
+
+    test('blocks scheduling when a required hero is already upgrading', () => {
+        const heroAwakeTimestamp = cocData.timestamp + 60 * 60;
+        const result = generateSchedule(
+            cloneData(cocData),
+            false,
+            'LPT',
+            false,
+            'home',
+            0,
+            '07:00',
+            '23:00',
+            {
+                heroAwakeMoments: [
+                    {
+                        heroId: 'Barbarian_King',
+                        timestamp: heroAwakeTimestamp,
+                    },
+                    {
+                        heroId: 'Archer_Queen',
+                        timestamp: heroAwakeTimestamp,
+                    },
+                ],
+            },
+        );
+
+        expect(result.err[0]).toBe(true);
+        expect(result.sch.schedule).toEqual([]);
+        expect(result.err[1]).toMatch(/^HeroAwakeConflict\|/);
+        expect(result.err[1]).toMatch(/Barbarian_King/);
+        expect(result.err[1]).toMatch(/Archer_Queen/);
     });
 
     test('locks Super Wizard Tower creation behind Wizard Tower max-level tasks', () => {

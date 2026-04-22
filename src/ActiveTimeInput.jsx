@@ -52,9 +52,16 @@ export default function ActiveTimeInput({
     const toMinutes = (h, m) =>
         parseInt(h || '0', 10) * 60 + parseInt(m || '0', 10);
 
+    const getWindowDurationMinutes = (startMinutes, endMinutes) => {
+        const normalized =
+            (endMinutes - startMinutes + 24 * 60) % (24 * 60);
+        return normalized === 0 ? 24 * 60 : normalized;
+    };
+
     const fromMinutes = (mins) => {
-        const h = Math.floor(mins / 60) % 24;
-        const m = mins % 60;
+        const totalMinutes = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+        const h = Math.floor(totalMinutes / 60) % 24;
+        const m = totalMinutes % 60;
         return [formatValue(h), formatValue(m)];
     };
 
@@ -68,24 +75,15 @@ export default function ActiveTimeInput({
         if (num > max) num = max;
         setter(formatValue(num));
 
-        // Enforce 1-hour minimum gap
+        // Enforce 1-hour minimum active duration, including overnight windows.
         const startTotal = toMinutes(startHour, startMinute);
         const endTotal = toMinutes(endHour, endMinute);
+        const windowDuration = getWindowDurationMinutes(startTotal, endTotal);
 
-        if (type === 'end') {
-            if (endTotal < startTotal + 60) {
-                const [h, m] = fromMinutes(startTotal + 60);
-                setEndHour(h);
-                setEndMinute(m);
-            }
-        }
-
-        if (type === 'start') {
-            if (endTotal < startTotal + 60) {
-                const [h, m] = fromMinutes(startTotal + 60);
-                setEndHour(h);
-                setEndMinute(m);
-            }
+        if (windowDuration < 60) {
+            const [h, m] = fromMinutes(startTotal + 60);
+            setEndHour(h);
+            setEndMinute(m);
         }
     };
 

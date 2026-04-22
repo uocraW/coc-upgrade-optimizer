@@ -4,6 +4,7 @@ import { BUILDING_COLORS } from './colorMap';
 import { TimelineCards } from './TimelineCards.jsx';
 import BuilderTimeline from './BuilderTimeline.jsx';
 import ActiveTimeInput from './ActiveTimeInput.jsx';
+import HeroAwakeInput, { HOME_HERO_OPTIONS } from './HeroAwakeInput.jsx';
 import { validatePlayerJSON, generatePreflight } from './inputValidator.js';
 import { auditMappingCoverage, validateAllConfigs } from './configValidator.js';
 import { getDisplayName, normalizeDisplayLanguage } from './displayNames.js';
@@ -240,6 +241,9 @@ const VISIBLE_STRATEGY_ENTRIES = Object.entries(STRATEGY_COPY).filter(
 );
 
 const BOOST_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+const DEFAULT_STRATEGY_KEY = 'Balanced';
+const VALID_STRATEGY_KEYS = new Set(Object.keys(STRATEGY_COPY));
+const VALID_HOME_HERO_IDS = new Set(HOME_HERO_OPTIONS);
 
 const formatActiveWindowLabel = (windowState = {}) => {
     if (!windowState.enabled) return 'All day';
@@ -247,6 +251,174 @@ const formatActiveWindowLabel = (windowState = {}) => {
     const end = windowState.end || '??:??';
     return `${start} → ${end}`;
 };
+
+const HERO_AWAKE_CONFLICT_PATTERN =
+    /^Warning: ([A-Za-z0-9_]+) is already upgrading and cannot be awake at (.+)\.$/;
+const HERO_AWAKE_BLOCKING_CONFLICT_PATTERN =
+    /^HeroAwakeConflict\|([^|]+)\|(.+)$/;
+
+function formatLocalRuleTime(rawTime, displayLanguage = 'zh') {
+    const parsedTime = new Date(rawTime);
+    if (Number.isNaN(parsedTime.getTime())) return rawTime;
+
+    const locale =
+        normalizeDisplayLanguage(displayLanguage) === 'zh'
+            ? 'zh-CN'
+            : 'en-US';
+
+    return new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).format(parsedTime);
+}
+
+function formatHeroNameList(heroIds = [], displayLanguage = 'zh') {
+    const normalizedLanguage = normalizeDisplayLanguage(displayLanguage);
+    const heroNames = heroIds
+        .map((heroId) => getDisplayName(heroId, normalizedLanguage))
+        .filter(Boolean);
+
+    if (heroNames.length <= 1) {
+        return heroNames[0] || '';
+    }
+
+    if (normalizedLanguage === 'zh') {
+        return heroNames.join('、');
+    }
+
+    if (heroNames.length === 2) {
+        return `${heroNames[0]} and ${heroNames[1]}`;
+    }
+
+    return `${heroNames.slice(0, -1).join(', ')}, and ${heroNames.at(-1)}`;
+}
+
+function normalizeHeroIds(heroIds = []) {
+    const seen = new Set();
+
+    return heroIds
+        .filter(
+            (heroId) =>
+                typeof heroId === 'string' && VALID_HOME_HERO_IDS.has(heroId),
+        )
+        .filter((heroId) => {
+            if (seen.has(heroId)) return false;
+            seen.add(heroId);
+            return true;
+        })
+        .sort(
+            (left, right) =>
+                HOME_HERO_OPTIONS.indexOf(left) - HOME_HERO_OPTIONS.indexOf(right),
+        );
+}
+
+export function normalizeHeroAwakeConstraints(constraints = []) {
+    if (!Array.isArray(constraints)) return [];
+
+    const mergedByTime = new Map();
+    const normalizedConstraints = [];
+
+    const upsertConstraint = (requiredAt, heroIds) => {
+        const normalizedRequiredAt =
+            typeof requiredAt === 'string' ? requiredAt : '';
+        const normalizedHeroIds = normalizeHeroIds(heroIds);
+
+        if (normalizedRequiredAt) {
+            const existing = mergedByTime.get(normalizedRequiredAt);
+            if (existing) {
+                existing.heroIds = normalizeHeroIds([
+                    ...existing.heroIds,
+                    ...normalizedHeroIds,
+                ]);
+                return;
+            }
+        }
+
+        const nextConstraint = {
+            requiredAt: normalizedRequiredAt,
+            heroIds: normalizedHeroIds,
+        };
+        normalizedConstraints.push(nextConstraint);
+        if (normalizedRequiredAt) {
+            mergedByTime.set(normalizedRequiredAt, nextConstraint);
+        }
+    };
+
+    constraints.forEach((constraint) => {
+        if (!constraint || typeof constraint !== 'object') return;
+
+        if (Array.isArray(constraint.heroIds)) {
+            upsertConstraint(constraint.requiredAt, constraint.heroIds);
+            return;
+        }
+
+        if (
+            typeof constraint.requiredAt === 'string' &&
+            typeof constraint.heroId === 'string' &&
+            VALID_HOME_HERO_IDS.has(constraint.heroId)
+        ) {
+            upsertConstraint(constraint.requiredAt, [constraint.heroId]);
+        }
+    });
+
+    return normalizedConstraints;
+}
+
+export function flattenHeroAwakeMoments(constraints = []) {
+    return normalizeHeroAwakeConstraints(constraints)
+        .filter(
+            (constraint) =>
+                constraint.requiredAt && Array.isArray(constraint.heroIds),
+        )
+        .flatMap((constraint) =>
+            constraint.heroIds.map((heroId) => ({
+                heroId,
+                timestamp: Math.floor(
+                    new Date(constraint.requiredAt).getTime() / 1000,
+                ),
+            })),
+        )
+        .filter((constraint) => Number.isFinite(constraint.timestamp));
+}
+
+export function formatScheduleWarningMessage(message, displayLanguage = 'zh') {
+    if (typeof message !== 'string') return String(message || '');
+
+    const normalizedLanguage = normalizeDisplayLanguage(displayLanguage);
+    const blockingConflict = message.match(HERO_AWAKE_BLOCKING_CONFLICT_PATTERN);
+    if (blockingConflict) {
+        const [, rawTime, rawHeroIds] = blockingConflict;
+        const heroIds = rawHeroIds.split(',').map((heroId) => heroId.trim());
+        const formattedTime = formatLocalRuleTime(rawTime, normalizedLanguage);
+        const heroNames = formatHeroNameList(heroIds, normalizedLanguage);
+
+        if (normalizedLanguage === 'zh') {
+            return `无法满足英雄醒着规则：${formattedTime} 时，${heroNames}已经在升级中。`;
+        }
+
+        const verb = heroIds.length > 1 ? 'are' : 'is';
+        return `Cannot satisfy this hero-awake rule: ${heroNames} ${verb} already upgrading at ${formattedTime}.`;
+    }
+
+    const heroAwakeConflict = message.match(HERO_AWAKE_CONFLICT_PATTERN);
+    if (heroAwakeConflict) {
+        const [, heroId, rawTime] = heroAwakeConflict;
+        const heroName = getDisplayName(heroId, normalizedLanguage);
+        const formattedTime = formatLocalRuleTime(rawTime, normalizedLanguage);
+
+        if (normalizedLanguage === 'zh') {
+            return `无法满足“王必须醒着”规则：${heroName} 在 ${formattedTime} 时已经在升级中。`;
+        }
+
+        return `Cannot satisfy this hero-awake rule: ${heroName} is already upgrading at ${formattedTime}.`;
+    }
+
+    return message;
+}
 
 // ---- zoom constants + helpers ----
 const MIN = 0.005;
@@ -272,7 +444,7 @@ export default function App() {
     // eslint-disable-next-line no-unused-vars
     const [err, setErr] = useState(false);
     const [scheduleType, setScheduleType] = useState(
-        'Longest Processing Time (LPT)',
+        STRATEGY_COPY[DEFAULT_STRATEGY_KEY]?.label || DEFAULT_STRATEGY_KEY,
     );
     const [dynamicHeight, setHeight] = useState(300);
     const [activeTime, setActiveTime] = useState({
@@ -287,8 +459,9 @@ export default function App() {
                 builderBonusPct: 0,
                 baseVillage: 'home',
                 fixedPriority: false,
-                preferredStrategy: 'LPT',
+                preferredStrategy: DEFAULT_STRATEGY_KEY,
                 displayLanguage: 'zh',
+                heroAwakeConstraints: [],
             }),
         [],
     );
@@ -306,10 +479,17 @@ export default function App() {
     });
 
     const [preferredStrategy, setPreferredStrategy] = useState(() => {
-        return persistedSettings.preferredStrategy === 'SPT' ? 'SPT' : 'LPT';
+        return VALID_STRATEGY_KEYS.has(persistedSettings.preferredStrategy)
+            ? persistedSettings.preferredStrategy
+            : DEFAULT_STRATEGY_KEY;
     });
     const [displayLanguage, setDisplayLanguage] = useState(() => {
         return normalizeDisplayLanguage(persistedSettings.displayLanguage);
+    });
+    const [heroAwakeConstraints, setHeroAwakeConstraints] = useState(() => {
+        return normalizeHeroAwakeConstraints(
+            persistedSettings.heroAwakeConstraints,
+        );
     });
     const [lastRunSignature, setLastRunSignature] = useState(null);
     const [scheduleStale, setScheduleStale] = useState(false);
@@ -324,6 +504,8 @@ export default function App() {
         iterations: null,
         taskCount: 0,
     });
+    const validationAlertRef = React.useRef(null);
+    const lastScrolledAlertKeyRef = React.useRef(null);
 
     React.useEffect(() => {
         savePersisted(persistenceKeys.settings, {
@@ -332,8 +514,16 @@ export default function App() {
             fixedPriority: priority,
             preferredStrategy,
             displayLanguage,
+            heroAwakeConstraints,
         });
-    }, [selectedPct, village, priority, preferredStrategy, displayLanguage]);
+    }, [
+        selectedPct,
+        village,
+        priority,
+        preferredStrategy,
+        displayLanguage,
+        heroAwakeConstraints,
+    ]);
 
     const scheduleMode = React.useMemo(
         () => (scheduleType.includes('SPT') ? 'SPT' : 'LPT'),
@@ -364,6 +554,35 @@ export default function App() {
         savePersisted(doneStorageKey, [...doneKeys]);
     }, [doneKeys, doneStorageKey]);
 
+    const validationAlertScrollKey = React.useMemo(() => {
+        if (!validationAlert?.visible) return null;
+
+        const messageText = Array.isArray(validationAlert.messages)
+            ? validationAlert.messages
+                  .map((message) => message?.text || '')
+                  .join('|')
+            : '';
+
+        return `${validationAlert.type || 'unknown'}:${validationAlert.title || ''}:${messageText}`;
+    }, [validationAlert]);
+
+    React.useEffect(() => {
+        if (!validationAlertScrollKey) {
+            lastScrolledAlertKeyRef.current = null;
+            return;
+        }
+
+        if (lastScrolledAlertKeyRef.current === validationAlertScrollKey) {
+            return;
+        }
+
+        validationAlertRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+        lastScrolledAlertKeyRef.current = validationAlertScrollKey;
+    }, [validationAlertScrollKey]);
+
     const boostPercent = Math.round((Number(selectedPct) || 0) * 100);
 
     const computeDataDigest = React.useCallback((data) => {
@@ -393,9 +612,17 @@ export default function App() {
                 village,
                 boost: selectedPct,
                 active: activeTime,
+                heroAwakeConstraints,
                 data: computeDataDigest(dataShape),
             }),
-        [priority, village, selectedPct, activeTime, computeDataDigest],
+        [
+            priority,
+            village,
+            selectedPct,
+            activeTime,
+            heroAwakeConstraints,
+            computeDataDigest,
+        ],
     );
 
     const currentSettingsSignature = React.useMemo(
@@ -427,11 +654,16 @@ export default function App() {
         );
         if (!confirmed) return;
 
-        setPreferredStrategy('LPT');
+        setPreferredStrategy(DEFAULT_STRATEGY_KEY);
+        setScheduleType(
+            STRATEGY_COPY[DEFAULT_STRATEGY_KEY]?.label ||
+                DEFAULT_STRATEGY_KEY,
+        );
         setSelectedPct(0);
         setVillage('home');
         setPriority(false);
         setDisplayLanguage('zh');
+        setHeroAwakeConstraints([]);
         setActiveTime({ enabled: false, start: null, end: null });
         setPreflightSummary(null);
         setMappingWarnings(null);
@@ -550,6 +782,7 @@ export default function App() {
             activeTime.enabled && activeTime.start ? activeTime.start : '00:00';
         let activeWindowEnd =
             activeTime.enabled && activeTime.end ? activeTime.end : '23:59';
+        const heroAwakeMoments = flattenHeroAwakeMoments(heroAwakeConstraints);
         const runStartPerf = performance.now();
         const {
             sch,
@@ -565,9 +798,47 @@ export default function App() {
             selectedPct,
             activeWindowStart,
             activeWindowEnd,
+            { heroAwakeMoments },
         );
         const runDurationMs = performance.now() - runStartPerf;
         setErr(err);
+        if (Array.isArray(err) && err[0]) {
+            setValidationAlert(
+                createStickyErrorAlert(
+                    err.slice(1).map((message) => ({
+                        text: formatScheduleWarningMessage(
+                            message,
+                            displayLanguage,
+                        ),
+                        severity: SEVERITY.CRITICAL,
+                    })),
+                ),
+            );
+            setTasks([]);
+            setMakespan(0);
+            setPerfStats({
+                generationMs: Math.round(runDurationMs),
+                iterations: null,
+                taskCount: 0,
+            });
+            setLastRunSignature(null);
+            setScheduleStale(false);
+            return;
+        }
+        if (Array.isArray(err) && err.length > 1) {
+            setValidationAlert(
+                createWarningAlert(
+                    err.slice(1).map((message) => ({
+                        text: formatScheduleWarningMessage(
+                            message,
+                            displayLanguage,
+                        ),
+                        severity: SEVERITY.WARNING,
+                    })),
+                    10000,
+                ),
+            );
+        }
         setTasks(sch.schedule);
         setMakespan(sch.makespan);
         setStartTime(runStart);
@@ -667,6 +938,13 @@ export default function App() {
     const appliedSettings = React.useMemo(() => {
         const baseLabel = village === 'home' ? 'Home Village' : 'Builder Base';
         const strategyMeta = STRATEGY_COPY[scheduleMode];
+        const activeHeroAwakeRuleCount = normalizeHeroAwakeConstraints(
+            heroAwakeConstraints,
+        ).filter(
+            (constraint) =>
+                constraint.requiredAt && constraint.heroIds.length > 0,
+        ).length;
+
         return [
             { label: 'Base', value: baseLabel },
             {
@@ -682,6 +960,13 @@ export default function App() {
                 label: 'Active Window',
                 value: formatActiveWindowLabel(activeTime),
             },
+            {
+                label: 'Hero Awake',
+                value:
+                    village === 'home' && activeHeroAwakeRuleCount > 0
+                        ? `${activeHeroAwakeRuleCount} rule${activeHeroAwakeRuleCount > 1 ? 's' : ''}`
+                        : 'None',
+            },
         ];
     }, [
         village,
@@ -689,6 +974,7 @@ export default function App() {
         boostPercent,
         priority,
         activeTime,
+        heroAwakeConstraints,
         scheduleType,
     ]);
 
@@ -704,6 +990,7 @@ export default function App() {
 
                     {validationAlert && (
                         <div
+                            ref={validationAlertRef}
                             className={`mb-6 rounded-2xl p-4 border ${
                                 validationAlert.type === 'critical'
                                     ? 'bg-red-900/20 border-red-500/50'
@@ -954,6 +1241,14 @@ export default function App() {
                                 onChange={setActiveTime}
                                 storageKey={persistenceKeys.activeTime(village)}
                             />
+
+                            {village === 'home' && (
+                                <HeroAwakeInput
+                                    value={heroAwakeConstraints}
+                                    onChange={setHeroAwakeConstraints}
+                                    displayLanguage={displayLanguage}
+                                />
+                            )}
 
                             <div className="flex flex-wrap gap-2 pt-2">
                                 <button

@@ -183,6 +183,7 @@ function calculateHeroAvailScore(task, context) {
         const taskEnd = (context.currentTime || 0) + task.duration;
         const wouldConflict = context.heroLockWindows.some((window) => {
             return (
+                window.heroId === task.id &&
                 taskEnd > window.start &&
                 (context.currentTime || 0) < window.end
             );
@@ -208,6 +209,64 @@ function calculateCategoryBalanceScore(task, context) {
     // Higher score for less-scheduled categories
     const maxCount = Math.max(...Object.values(context.recentCategoryCount), 1);
     return 1 - recentCount / maxCount;
+}
+
+function normalizeHeroAwakeMoments(heroAwakeMoments = []) {
+    if (!Array.isArray(heroAwakeMoments)) return [];
+
+    return heroAwakeMoments
+        .filter(
+            (moment) =>
+                moment &&
+                typeof moment.heroId === 'string' &&
+                Number.isFinite(Number(moment.timestamp)),
+        )
+        .map((moment) => ({
+            heroId: moment.heroId,
+            timestamp: Math.floor(Number(moment.timestamp)),
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function getHeroBlockedUntil(task, currentTime, heroAwakeMoments = []) {
+    if (!task || task.priority === 1) return null;
+    if (!heroAwakeMoments.length) return null;
+
+    const matchingMoment = heroAwakeMoments.find(
+        (moment) =>
+            moment.heroId === task.id &&
+            currentTime < moment.timestamp &&
+            currentTime + task.duration > moment.timestamp,
+    );
+
+    return matchingMoment ? matchingMoment.timestamp : null;
+}
+
+function collectHeroAwakeConflicts(tasks, timestamp, heroAwakeMoments) {
+    const ongoingHeroTasks = tasks.filter((task) => task.priority === 1);
+    const conflictsByTimestamp = new Map();
+
+    for (const moment of heroAwakeMoments) {
+        const conflictingTask = ongoingHeroTasks.find(
+            (task) =>
+                task.id === moment.heroId &&
+                timestamp < moment.timestamp &&
+                timestamp + task.duration > moment.timestamp,
+        );
+
+        if (conflictingTask) {
+            const existingHeroIds =
+                conflictsByTimestamp.get(moment.timestamp) || new Set();
+            existingHeroIds.add(moment.heroId);
+            conflictsByTimestamp.set(moment.timestamp, existingHeroIds);
+        }
+    }
+
+    return [...conflictsByTimestamp.entries()]
+        .sort((left, right) => left[0] - right[0])
+        .map(([conflictTimestamp, heroIds]) => {
+            return `HeroAwakeConflict|${new Date(conflictTimestamp * 1000).toISOString()}|${[...heroIds].join(',')}`;
+        });
 }
 
 function arrayToObject(arr) {
@@ -833,6 +892,25 @@ function getTimeString(epoch) {
     return timeString;
 }
 
+function timeStringToMinutes(timeString) {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    return hours * 60 + minutes;
+}
+
+function isWithinActiveWindow(timeString, activeStart, activeEnd) {
+    const currentMinutes = timeStringToMinutes(timeString);
+    const startMinutes = timeStringToMinutes(activeStart);
+    const endMinutes = timeStringToMinutes(activeEnd);
+
+    if (startMinutes <= endMinutes) {
+        return (
+            currentMinutes >= startMinutes && currentMinutes <= endMinutes
+        );
+    }
+
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+}
+
 function setDateString(epoch, target) {
     const targetSplit = target.split(':');
     const date = new Date(epoch * 1000);
@@ -855,6 +933,7 @@ function myScheduler(
     activeStart = '08:00',
     activeEnd = '23:59',
     optimize = false,
+    options = {},
 ) {
     // console.log(tasks.filter(t => heroes.includes(t.id)));
     // console.log(hhTask);
@@ -897,13 +976,20 @@ function myScheduler(
 
     let currTime = timestamp;
     const startTime = currTime;
+    const heroAwakeMoments = normalizeHeroAwakeMoments(
+        options.heroAwakeMoments,
+    );
 
     // Initialize objective scoring context (Phase 8)
     const scoringContext = {
         currentTime: currTime,
         recentResourceUsage: { gold: 0, elixir: 0, darkElixir: 0, mixed: 0 },
         recentCategoryCount: {},
-        heroLockWindows: [], // TODO: Load from user settings in future phase
+        heroLockWindows: heroAwakeMoments.map((moment) => ({
+            heroId: moment.heroId,
+            start: moment.timestamp,
+            end: moment.timestamp,
+        })),
         rushCriticalIds: new Set(), // TODO: Populate from rush mode config
     };
 
@@ -971,8 +1057,44 @@ function myScheduler(
 
             const currTimeString = getTimeString(currTime);
             // Break out if current timestamp is during off-time
-            if (currTimeString < activeStart || currTimeString > activeEnd)
+            if (!isWithinActiveWindow(currTimeString, activeStart, activeEnd))
                 break;
+
+            idx = ready.findIndex(
+                (task) =>
+                    getHeroBlockedUntil(task, currTime, heroAwakeMoments) ===
+                    null,
+            );
+
+            if (idx === -1) {
+                const blockedUntilCandidates = ready
+                    .map((task) =>
+                        getHeroBlockedUntil(task, currTime, heroAwakeMoments),
+                    )
+                    .filter((blockedUntil) =>
+                        Number.isFinite(Number(blockedUntil)),
+                    );
+
+                if (running.length === 0 && blockedUntilCandidates.length > 0) {
+                    currTime = Math.max(
+                        currTime,
+                        Math.min(...blockedUntilCandidates),
+                    );
+                    const resumedTimeString = getTimeString(currTime);
+                    if (
+                        !isWithinActiveWindow(
+                            resumedTimeString,
+                            activeStart,
+                            activeEnd,
+                        )
+                    ) {
+                        currTime = setDateString(currTime, activeStart);
+                    }
+                    scoringContext.currentTime = currTime;
+                    continue;
+                }
+                break;
+            }
 
             const currTask = ready[idx];
             // Try to use same worker as previous level if available (deterministic affinity)
@@ -1000,9 +1122,10 @@ function myScheduler(
             finishedTime = Math.min(...running.map((wd) => wd.end));
         }
         let finishTimeString = getTimeString(finishedTime);
-        if (finishTimeString < activeStart || finishTimeString > activeEnd)
+        if (!isWithinActiveWindow(finishTimeString, activeStart, activeEnd))
             finishedTime = setDateString(finishedTime, activeStart);
         currTime = finishedTime;
+        scoringContext.currentTime = currTime;
         const finishedTask = workers.filter((wd) => wd?.end <= finishedTime);
         for (let ft of finishedTask) {
             completed.push(ft);
@@ -1377,6 +1500,7 @@ export function generateSchedule(
     boost = 0.05,
     startTime = '07:00',
     endTime = '23:00',
+    options = {},
 ) {
     if (!dataJSON || !dataJSON.buildings || dataJSON.buildings?.length === 0) {
         let resp = { schedule: [], makespan: 0 };
@@ -1392,6 +1516,9 @@ export function generateSchedule(
         priority,
         base,
         boost,
+    );
+    const heroAwakeMoments = normalizeHeroAwakeMoments(
+        options.heroAwakeMoments,
     );
 
     //  Validate tasks before scheduling
@@ -1419,6 +1546,20 @@ export function generateSchedule(
         };
     }
 
+    const heroAwakeConflicts = collectHeroAwakeConflicts(
+        tasks,
+        timestamp,
+        heroAwakeMoments,
+    );
+    if (heroAwakeConflicts.length > 0) {
+        return {
+            sch: { schedule: [], makespan: 0 },
+            numBuilders: numWorkers,
+            startTime: timestamp,
+            err: [true, ...heroAwakeConflicts],
+        };
+    }
+
     const schedule = myScheduler(
         tasks,
         numWorkers,
@@ -1427,6 +1568,7 @@ export function generateSchedule(
         startTime,
         endTime,
         true,
+        { heroAwakeMoments },
     );
 
     for (const t of schedule.schedule) {
