@@ -34,6 +34,34 @@ const HOME_BUILDING_UNLOCK_RULES = {
     },
 };
 
+const HOME_HERO_IDS = [
+    'Barbarian_King',
+    'Archer_Queen',
+    'Minion_Prince',
+    'Grand_Warden',
+    'Royal_Champion',
+    'Dragon_Duke',
+];
+
+const CWL_TECH_BUILDING_IDS = new Set([
+    'Laboratory',
+    'Hero_Hall',
+    'Blacksmith',
+    'Pet_House',
+    'Clan_Castle',
+    'Barracks',
+    'Dark_Barracks',
+    'Army_Camp',
+    'Spell_Factory',
+    'Dark_Spell_Factory',
+    'Workshop',
+]);
+
+const DEFENSE_IDS = new Set([
+    ...Object.keys(defenseConfig),
+    ...Object.keys(trapConfig),
+]);
+
 /**
  * Multi-Objective Optimization Profiles (Phase 8)
  * Each profile defines weights for competing optimization objectives
@@ -92,6 +120,15 @@ const OBJECTIVE_PROFILES = {
             rushPriority: 0.6, // High weight on rush-critical buildings
         },
     },
+    CWLSafe: {
+        name: 'CWL Safe',
+        description:
+            'Protect selected heroes during the monthly CWL safe window while favoring offense progress outside it',
+        weights: {
+            duration: 0.15,
+            cwlCategory: 0.85,
+        },
+    },
 };
 
 /**
@@ -139,6 +176,11 @@ function calculateObjectiveScore(task, profile, context = {}) {
         // Very high score for rush-critical buildings
         const rushScore = context.rushCriticalIds.has(task.id) ? 1.0 : 0.0;
         score += weights.rushPriority * rushScore;
+    }
+
+    if (weights.cwlCategory > 0) {
+        const cwlCategoryScore = calculateCwlSafeCategoryScore(task, context);
+        score += weights.cwlCategory * cwlCategoryScore;
     }
 
     // Store score on task for debugging/display
@@ -211,6 +253,44 @@ function calculateCategoryBalanceScore(task, context) {
     return 1 - recentCount / maxCount;
 }
 
+function normalizeCwlSafeSettings(cwlSafeSettings = null) {
+    if (!cwlSafeSettings || typeof cwlSafeSettings !== 'object') {
+        return null;
+    }
+
+    const protectedHeroIds = Array.isArray(cwlSafeSettings.protectedHeroIds)
+        ? cwlSafeSettings.protectedHeroIds.filter((heroId) =>
+              HOME_HERO_IDS.includes(heroId),
+          )
+        : [];
+
+    return {
+        protectedHeroIds,
+    };
+}
+
+function getTaskCwlCategoryScore(task, cwlSafeSettings = null) {
+    const protectedHeroIds = new Set(cwlSafeSettings?.protectedHeroIds || []);
+
+    if (protectedHeroIds.has(task.id)) {
+        return 1.0;
+    }
+
+    if (CWL_TECH_BUILDING_IDS.has(task.id)) {
+        return 0.75;
+    }
+
+    if (DEFENSE_IDS.has(task.id)) {
+        return 0.45;
+    }
+
+    return 0.2;
+}
+
+function calculateCwlSafeCategoryScore(task, context) {
+    return getTaskCwlCategoryScore(task, context.cwlSafeSettings);
+}
+
 function normalizeHeroAwakeMoments(heroAwakeMoments = []) {
     if (!Array.isArray(heroAwakeMoments)) return [];
 
@@ -266,6 +346,111 @@ function collectHeroAwakeConflicts(tasks, timestamp, heroAwakeMoments) {
         .sort((left, right) => left[0] - right[0])
         .map(([conflictTimestamp, heroIds]) => {
             return `HeroAwakeConflict|${new Date(conflictTimestamp * 1000).toISOString()}|${[...heroIds].join(',')}`;
+        });
+}
+
+function buildMonthlyCwlSafeWindows(startTimestamp, endTimestamp) {
+    const windows = [];
+    const startDate = new Date(startTimestamp * 1000);
+    const endDate = new Date(endTimestamp * 1000);
+    const cursor = new Date(
+        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() - 1, 1),
+    );
+    const lastMonth = new Date(
+        Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() + 2, 1),
+    );
+
+    while (cursor <= lastMonth) {
+        const windowStart = Date.UTC(
+            cursor.getUTCFullYear(),
+            cursor.getUTCMonth(),
+            2,
+            0,
+            0,
+            0,
+            0,
+        );
+        const windowEnd = Date.UTC(
+            cursor.getUTCFullYear(),
+            cursor.getUTCMonth(),
+            12,
+            0,
+            0,
+            0,
+            0,
+        );
+
+        windows.push({
+            start: Math.floor(windowStart / 1000),
+            end: Math.floor(windowEnd / 1000),
+        });
+
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+
+    return windows;
+}
+
+function getCwlSafeBlockedUntil(
+    task,
+    currentTime,
+    cwlSafeWindows = [],
+    cwlSafeSettings = null,
+) {
+    if (!task || task.priority === 1) return null;
+    const protectedHeroIds = new Set(cwlSafeSettings?.protectedHeroIds || []);
+    if (!protectedHeroIds.has(task.id)) return null;
+    if (!cwlSafeWindows.length) return null;
+
+    let candidateStart = currentTime;
+
+    for (const window of cwlSafeWindows) {
+        if (candidateStart >= window.end) continue;
+        if (
+            candidateStart < window.end &&
+            candidateStart + task.duration > window.start
+        ) {
+            candidateStart = window.end;
+        }
+    }
+
+    return candidateStart === currentTime ? null : candidateStart;
+}
+
+function collectOngoingCwlSafeConflicts(
+    tasks,
+    timestamp,
+    cwlSafeWindows = [],
+    cwlSafeSettings = null,
+) {
+    const protectedHeroIds = new Set(cwlSafeSettings?.protectedHeroIds || []);
+    if (!protectedHeroIds.size || !cwlSafeWindows.length) return [];
+
+    const ongoingHeroTasks = tasks.filter(
+        (task) => task.priority === 1 && protectedHeroIds.has(task.id),
+    );
+    const conflictsByWindow = new Map();
+
+    for (const task of ongoingHeroTasks) {
+        for (const window of cwlSafeWindows) {
+            if (timestamp >= window.end) continue;
+            if (timestamp < window.end && timestamp + task.duration > window.start) {
+                const key = `${window.start}|${window.end}`;
+                const entry = conflictsByWindow.get(key) || {
+                    start: window.start,
+                    end: window.end,
+                    heroIds: new Set(),
+                };
+                entry.heroIds.add(task.id);
+                conflictsByWindow.set(key, entry);
+            }
+        }
+    }
+
+    return [...conflictsByWindow.values()]
+        .sort((left, right) => left.start - right.start)
+        .map((conflict) => {
+            return `CWLSafeConflict|${new Date(conflict.start * 1000).toISOString()}|${new Date(conflict.end * 1000).toISOString()}|${[...conflict.heroIds].join(',')}`;
         });
 }
 
@@ -979,6 +1164,15 @@ function myScheduler(
     const heroAwakeMoments = normalizeHeroAwakeMoments(
         options.heroAwakeMoments,
     );
+    const cwlSafeSettings = normalizeCwlSafeSettings(options.cwlSafeSettings);
+    const totalDurationHorizon = tasks.reduce(
+        (sum, task) => sum + Number(task.duration || 0),
+        0,
+    );
+    const cwlSafeWindows = buildMonthlyCwlSafeWindows(
+        timestamp,
+        timestamp + totalDurationHorizon + 40 * 24 * 60 * 60,
+    );
 
     // Initialize objective scoring context (Phase 8)
     const scoringContext = {
@@ -990,6 +1184,7 @@ function myScheduler(
             start: moment.timestamp,
             end: moment.timestamp,
         })),
+        cwlSafeSettings,
         rushCriticalIds: new Set(), // TODO: Populate from rush mode config
     };
 
@@ -1062,23 +1257,41 @@ function myScheduler(
 
             const currentLoopTime = currTime;
             idx = ready.findIndex(
-                (task) =>
-                    getHeroBlockedUntil(
+                (task) => {
+                    const heroAwakeBlockedUntil = getHeroBlockedUntil(
                         task,
                         currentLoopTime,
                         heroAwakeMoments,
-                    ) === null,
+                    );
+                    const cwlSafeBlockedUntil = getCwlSafeBlockedUntil(
+                        task,
+                        currentLoopTime,
+                        cwlSafeWindows,
+                        cwlSafeSettings,
+                    );
+
+                    return (
+                        heroAwakeBlockedUntil === null &&
+                        cwlSafeBlockedUntil === null
+                    );
+                },
             );
 
             if (idx === -1) {
                 const blockedUntilCandidates = ready
-                    .map((task) =>
+                    .flatMap((task) => [
                         getHeroBlockedUntil(
                             task,
                             currentLoopTime,
                             heroAwakeMoments,
                         ),
-                    )
+                        getCwlSafeBlockedUntil(
+                            task,
+                            currentLoopTime,
+                            cwlSafeWindows,
+                            cwlSafeSettings,
+                        ),
+                    ])
                     .filter((blockedUntil) =>
                         Number.isFinite(Number(blockedUntil)),
                     );
@@ -1528,6 +1741,15 @@ export function generateSchedule(
     const heroAwakeMoments = normalizeHeroAwakeMoments(
         options.heroAwakeMoments,
     );
+    const cwlSafeSettings = normalizeCwlSafeSettings(options.cwlSafeSettings);
+    const totalDurationHorizon = tasks.reduce(
+        (sum, task) => sum + Number(task.duration || 0),
+        0,
+    );
+    const cwlSafeWindows = buildMonthlyCwlSafeWindows(
+        timestamp,
+        timestamp + totalDurationHorizon + 40 * 24 * 60 * 60,
+    );
 
     //  Validate tasks before scheduling
     try {
@@ -1567,6 +1789,14 @@ export function generateSchedule(
             err: [true, ...heroAwakeConflicts],
         };
     }
+    warnings.push(
+        ...collectOngoingCwlSafeConflicts(
+            tasks,
+            timestamp,
+            cwlSafeWindows,
+            cwlSafeSettings,
+        ),
+    );
 
     const schedule = myScheduler(
         tasks,
@@ -1576,7 +1806,7 @@ export function generateSchedule(
         startTime,
         endTime,
         true,
-        { heroAwakeMoments },
+        { heroAwakeMoments, cwlSafeSettings },
     );
 
     for (const t of schedule.schedule) {

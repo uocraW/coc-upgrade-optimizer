@@ -5,6 +5,7 @@ import { TimelineCards } from './TimelineCards.jsx';
 import BuilderTimeline from './BuilderTimeline.jsx';
 import ActiveTimeInput from './ActiveTimeInput.jsx';
 import HeroAwakeInput, { HOME_HERO_OPTIONS } from './HeroAwakeInput.jsx';
+import CwlSafeInput from './CwlSafeInput.jsx';
 import { validatePlayerJSON, generatePreflight } from './inputValidator.js';
 import { auditMappingCoverage, validateAllConfigs } from './configValidator.js';
 import { getDisplayName, normalizeDisplayLanguage } from './displayNames.js';
@@ -22,6 +23,7 @@ import {
     removePersisted,
     savePersisted,
 } from './persistence';
+import exampleVillageData from './data/example_th18.json';
 
 migratePersistenceIfNeeded();
 
@@ -244,6 +246,7 @@ const BOOST_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 const DEFAULT_STRATEGY_KEY = 'Balanced';
 const VALID_STRATEGY_KEYS = new Set(Object.keys(STRATEGY_COPY));
 const VALID_HOME_HERO_IDS = new Set(HOME_HERO_OPTIONS);
+const DEFAULT_CWL_SAFE_PROTECTED_HERO_IDS = [...HOME_HERO_OPTIONS];
 
 const formatActiveWindowLabel = (windowState = {}) => {
     if (!windowState.enabled) return 'All day';
@@ -256,6 +259,7 @@ const HERO_AWAKE_CONFLICT_PATTERN =
     /^Warning: ([A-Za-z0-9_]+) is already upgrading and cannot be awake at (.+)\.$/;
 const HERO_AWAKE_BLOCKING_CONFLICT_PATTERN =
     /^HeroAwakeConflict\|([^|]+)\|(.+)$/;
+const CWL_SAFE_WARNING_PATTERN = /^CWLSafeConflict\|([^|]+)\|([^|]+)\|(.+)$/;
 
 function formatLocalRuleTime(rawTime, displayLanguage = 'zh') {
     const parsedTime = new Date(rawTime);
@@ -385,10 +389,32 @@ export function flattenHeroAwakeMoments(constraints = []) {
         .filter((constraint) => Number.isFinite(constraint.timestamp));
 }
 
+export function normalizeCwlSafeProtectedHeroIds(heroIds = []) {
+    return normalizeHeroIds(
+        Array.isArray(heroIds) ? heroIds : DEFAULT_CWL_SAFE_PROTECTED_HERO_IDS,
+    );
+}
+
 export function formatScheduleWarningMessage(message, displayLanguage = 'zh') {
     if (typeof message !== 'string') return String(message || '');
 
     const normalizedLanguage = normalizeDisplayLanguage(displayLanguage);
+    const cwlSafeConflict = message.match(CWL_SAFE_WARNING_PATTERN);
+    if (cwlSafeConflict) {
+        const [, rawStart, rawEnd, rawHeroIds] = cwlSafeConflict;
+        const heroIds = rawHeroIds.split(',').map((heroId) => heroId.trim());
+        const formattedStart = formatLocalRuleTime(rawStart, normalizedLanguage);
+        const formattedEnd = formatLocalRuleTime(rawEnd, normalizedLanguage);
+        const heroNames = formatHeroNameList(heroIds, normalizedLanguage);
+
+        if (normalizedLanguage === 'zh') {
+            return `注意：${heroNames}当前已在升级中，并会覆盖 ${formattedStart} 至 ${formattedEnd} 的 CWL 安全窗。本次排程已继续生成，但本月联赛可能无法保证这些英雄可用。`;
+        }
+
+        const verb = heroIds.length > 1 ? 'are' : 'is';
+        return `Warning: ${heroNames} ${verb} already upgrading and will overlap the CWL safe window from ${formattedStart} to ${formattedEnd}. Scheduling continued, but these heroes may be unavailable for this month's CWL.`;
+    }
+
     const blockingConflict = message.match(HERO_AWAKE_BLOCKING_CONFLICT_PATTERN);
     if (blockingConflict) {
         const [, rawTime, rawHeroIds] = blockingConflict;
@@ -457,11 +483,11 @@ export default function App() {
         () =>
             loadPersisted(persistenceKeys.settings, {
                 builderBonusPct: 0,
-                baseVillage: 'home',
                 fixedPriority: false,
                 preferredStrategy: DEFAULT_STRATEGY_KEY,
                 displayLanguage: 'zh',
                 heroAwakeConstraints: [],
+                cwlSafeProtectedHeroIds: DEFAULT_CWL_SAFE_PROTECTED_HERO_IDS,
             }),
         [],
     );
@@ -470,9 +496,7 @@ export default function App() {
         return Number(persistedSettings.builderBonusPct || 0);
     });
 
-    const [village, setVillage] = useState(() => {
-        return persistedSettings.baseVillage === 'builder' ? 'builder' : 'home';
-    });
+    const village = 'home';
 
     const [priority, setPriority] = useState(() => {
         return Boolean(persistedSettings.fixedPriority);
@@ -491,6 +515,11 @@ export default function App() {
             persistedSettings.heroAwakeConstraints,
         );
     });
+    const [cwlSafeProtectedHeroIds, setCwlSafeProtectedHeroIds] = useState(() =>
+        normalizeCwlSafeProtectedHeroIds(
+            persistedSettings.cwlSafeProtectedHeroIds,
+        ),
+    );
     const [lastRunSignature, setLastRunSignature] = useState(null);
     const [scheduleStale, setScheduleStale] = useState(false);
     const [activeTimeResetToken, setActiveTimeResetToken] = useState(0);
@@ -510,24 +539,24 @@ export default function App() {
     React.useEffect(() => {
         savePersisted(persistenceKeys.settings, {
             builderBonusPct: selectedPct,
-            baseVillage: village,
             fixedPriority: priority,
             preferredStrategy,
             displayLanguage,
             heroAwakeConstraints,
+            cwlSafeProtectedHeroIds,
         });
     }, [
         selectedPct,
-        village,
         priority,
         preferredStrategy,
         displayLanguage,
         heroAwakeConstraints,
+        cwlSafeProtectedHeroIds,
     ]);
 
     const scheduleMode = React.useMemo(
-        () => (scheduleType.includes('SPT') ? 'SPT' : 'LPT'),
-        [scheduleType],
+        () => preferredStrategy,
+        [preferredStrategy],
     );
     const doneStorageKey = React.useMemo(() => {
         const playerTag = jsonData?.tag || 'unknown';
@@ -613,6 +642,7 @@ export default function App() {
                 boost: selectedPct,
                 active: activeTime,
                 heroAwakeConstraints,
+                cwlSafeProtectedHeroIds,
                 data: computeDataDigest(dataShape),
             }),
         [
@@ -621,6 +651,7 @@ export default function App() {
             selectedPct,
             activeTime,
             heroAwakeConstraints,
+            cwlSafeProtectedHeroIds,
             computeDataDigest,
         ],
     );
@@ -660,10 +691,10 @@ export default function App() {
                 DEFAULT_STRATEGY_KEY,
         );
         setSelectedPct(0);
-        setVillage('home');
         setPriority(false);
         setDisplayLanguage('zh');
         setHeroAwakeConstraints([]);
+        setCwlSafeProtectedHeroIds(DEFAULT_CWL_SAFE_PROTECTED_HERO_IDS);
         setActiveTime({ enabled: false, start: null, end: null });
         setPreflightSummary(null);
         setMappingWarnings(null);
@@ -673,12 +704,11 @@ export default function App() {
         setActiveTimeResetToken((token) => token + 1);
         removePersisted(persistenceKeys.settings);
         removePersisted(persistenceKeys.activeTime('home'));
-        removePersisted(persistenceKeys.activeTime('builder'));
     };
 
     const resetProgress = () => {
         const confirmed = window.confirm(
-            'Reset progress for the current player, village, and strategy?',
+            'Reset progress for the current player and strategy?',
         );
         if (!confirmed) return;
 
@@ -783,6 +813,15 @@ export default function App() {
         let activeWindowEnd =
             activeTime.enabled && activeTime.end ? activeTime.end : '23:59';
         const heroAwakeMoments = flattenHeroAwakeMoments(heroAwakeConstraints);
+        const cwlSafeSettings =
+            strategy === 'CWLSafe'
+                ? {
+                      protectedHeroIds:
+                          normalizeCwlSafeProtectedHeroIds(
+                              cwlSafeProtectedHeroIds,
+                          ),
+                  }
+                : null;
         const runStartPerf = performance.now();
         const {
             sch,
@@ -798,7 +837,7 @@ export default function App() {
             selectedPct,
             activeWindowStart,
             activeWindowEnd,
-            { heroAwakeMoments },
+            { heroAwakeMoments, cwlSafeSettings },
         );
         const runDurationMs = performance.now() - runStartPerf;
         setErr(err);
@@ -936,7 +975,6 @@ export default function App() {
     }, [remainingTasks, startTime]);
 
     const appliedSettings = React.useMemo(() => {
-        const baseLabel = village === 'home' ? 'Home Village' : 'Builder Base';
         const strategyMeta = STRATEGY_COPY[scheduleMode];
         const activeHeroAwakeRuleCount = normalizeHeroAwakeConstraints(
             heroAwakeConstraints,
@@ -944,9 +982,11 @@ export default function App() {
             (constraint) =>
                 constraint.requiredAt && constraint.heroIds.length > 0,
         ).length;
+        const activeCwlProtectedHeroCount = normalizeCwlSafeProtectedHeroIds(
+            cwlSafeProtectedHeroIds,
+        ).length;
 
         return [
-            { label: 'Base', value: baseLabel },
             {
                 label: 'Strategy',
                 value: strategyMeta?.label || scheduleType,
@@ -963,18 +1003,26 @@ export default function App() {
             {
                 label: 'Hero Awake',
                 value:
-                    village === 'home' && activeHeroAwakeRuleCount > 0
+                    activeHeroAwakeRuleCount > 0
                         ? `${activeHeroAwakeRuleCount} rule${activeHeroAwakeRuleCount > 1 ? 's' : ''}`
                         : 'None',
             },
+            {
+                label: 'CWL Safe',
+                value:
+                    preferredStrategy === 'CWLSafe'
+                        ? `${activeCwlProtectedHeroCount} protected hero${activeCwlProtectedHeroCount > 1 ? 'es' : ''}`
+                        : 'Inactive',
+            },
         ];
     }, [
-        village,
         scheduleMode,
         boostPercent,
         priority,
         activeTime,
         heroAwakeConstraints,
+        cwlSafeProtectedHeroIds,
+        preferredStrategy,
         scheduleType,
     ]);
 
@@ -1102,7 +1150,7 @@ export default function App() {
                             <JsonInput
                                 label="Paste village JSON data"
                                 storageKey={persistenceKeys.jsonDraft}
-                                initial={`{"tag":"#GU2QV0Y8Q","timestamp":${Math.floor(Date.now() / 1000)},"buildings":[{"data":1000008,"lvl":10,"gear_up":1},{"data":1000011,"lvl":5,"timer":24973}]}`}
+                                initial={exampleVillageData}
                                 onValid={setJsonData}
                                 onValidityChange={setJsonValid}
                             />
@@ -1169,25 +1217,6 @@ export default function App() {
                                         <option value="en">English</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-2">
-                                        Select Village
-                                    </label>
-                                    <select
-                                        value={village}
-                                        onChange={(e) =>
-                                            setVillage(e.target.value)
-                                        }
-                                        className="input-modern w-full font-bold text-sm py-2 cursor-pointer"
-                                    >
-                                        <option value="home">
-                                            Home Village
-                                        </option>
-                                        <option value="builder">
-                                            Builder Base
-                                        </option>
-                                    </select>
-                                </div>
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-2xs uppercase tracking-widest text-amber-400 font-bold">
@@ -1242,10 +1271,16 @@ export default function App() {
                                 storageKey={persistenceKeys.activeTime(village)}
                             />
 
-                            {village === 'home' && (
-                                <HeroAwakeInput
-                                    value={heroAwakeConstraints}
-                                    onChange={setHeroAwakeConstraints}
+                            <HeroAwakeInput
+                                value={heroAwakeConstraints}
+                                onChange={setHeroAwakeConstraints}
+                                displayLanguage={displayLanguage}
+                            />
+
+                            {preferredStrategy === 'CWLSafe' && (
+                                <CwlSafeInput
+                                    value={cwlSafeProtectedHeroIds}
+                                    onChange={setCwlSafeProtectedHeroIds}
                                     displayLanguage={displayLanguage}
                                 />
                             )}

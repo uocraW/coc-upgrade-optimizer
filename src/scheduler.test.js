@@ -35,6 +35,14 @@ function isWithinWindow(timeString, startTime, endTime) {
     return current >= start || current <= end;
 }
 
+function getMonthlyCwlSafeWindowEnd(timestamp) {
+    const date = new Date(timestamp * 1000);
+    return Math.floor(
+        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 12, 0, 0, 0, 0) /
+            1000,
+    );
+}
+
 describe('scheduler core scenarios', () => {
     test('returns actionable error for invalid JSON payload', () => {
         const result = generateSchedule(null);
@@ -171,6 +179,92 @@ describe('scheduler core scenarios', () => {
             (task) => task.priority === 1,
         );
         expect(ongoing.length).toBeGreaterThan(0);
+    });
+
+    test('CWL Safe keeps protected heroes out of the current monthly safe window', () => {
+        const data = cloneData(cocData);
+        data.heroes = data.heroes.map((hero) => {
+            if (hero.data === 28000000 || hero.data === 28000001) {
+                const { timer, ...rest } = hero;
+                return rest;
+            }
+            return hero;
+        });
+
+        const cwlSafeWindowEnd = getMonthlyCwlSafeWindowEnd(data.timestamp);
+        const result = generateSchedule(
+            data,
+            false,
+            'CWLSafe',
+            false,
+            'home',
+            0,
+            '07:00',
+            '23:00',
+            {
+                cwlSafeSettings: {
+                    protectedHeroIds: [
+                        'Barbarian_King',
+                        'Archer_Queen',
+                    ],
+                },
+            },
+        );
+
+        expect(result.err[0]).toBe(false);
+        const protectedHeroTasks = result.sch.schedule.filter((task) =>
+            ['Barbarian_King', 'Archer_Queen'].includes(task.id),
+        );
+
+        expect(protectedHeroTasks.length).toBeGreaterThan(0);
+        expect(
+            protectedHeroTasks.every((task) => task.start >= cwlSafeWindowEnd),
+        ).toBe(true);
+    });
+
+    test('CWL Safe warns on protected heroes already upgrading during the safe window but still schedules', () => {
+        const data = {
+            timestamp: cocData.timestamp,
+            buildings: [
+                { data: 1000001, lvl: 10, cnt: 1 },
+                { data: 1000015, lvl: 1, cnt: 5 },
+                { data: 1000071, lvl: 4, cnt: 1 },
+                { data: 1000007, lvl: 1, cnt: 1 },
+                { data: 1000014, lvl: 1, cnt: 1 },
+                { data: 1000009, lvl: 1, cnt: 4 },
+            ],
+            traps: [],
+            heroes: [
+                { data: 28000000, lvl: 37, timer: 15 * 24 * 60 * 60 },
+                { data: 28000001, lvl: 37, timer: 15 * 24 * 60 * 60 },
+                { data: 28000006, lvl: 18 },
+            ],
+        };
+
+        const result = generateSchedule(
+            data,
+            false,
+            'CWLSafe',
+            false,
+            'home',
+            0,
+            '07:00',
+            '23:00',
+            {
+                cwlSafeSettings: {
+                    protectedHeroIds: [
+                        'Barbarian_King',
+                        'Archer_Queen',
+                    ],
+                },
+            },
+        );
+
+        expect(result.err[0]).toBe(false);
+        expect(
+            result.err.find((message) => /^CWLSafeConflict\|/.test(message)),
+        ).toBeDefined();
+        expect(result.sch.schedule.length).toBeGreaterThan(0);
     });
 
     test('supports TH18 inputs without throwing during schedule generation', () => {

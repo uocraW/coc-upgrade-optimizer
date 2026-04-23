@@ -5,6 +5,7 @@ jest.mock('./BuilderTimeline.jsx', () => () => null);
 import App, {
     flattenHeroAwakeMoments,
     formatScheduleWarningMessage,
+    normalizeCwlSafeProtectedHeroIds,
     normalizeHeroAwakeConstraints,
 } from './App';
 
@@ -16,6 +17,18 @@ test('renders smart village tracker title', () => {
     render(<App />);
     const headingElement = screen.getByText(/coc upgrade tracker/i);
     expect(headingElement).toBeInTheDocument();
+});
+
+test('prefills the JSON input with runnable example data on first load', () => {
+    render(<App />);
+
+    const jsonTextarea = screen.getByPlaceholderText(
+        /#EXAMPLE","buildings/i,
+    );
+    expect(jsonTextarea.value).toContain('"tag"');
+    expect(jsonTextarea.value).toContain('#9JYU89YQ');
+    expect(jsonTextarea.value).toContain('"guardians"');
+    expect(jsonTextarea.value).toContain('"lvl":18');
 });
 
 test('renders phase controls for strategy and reset actions', () => {
@@ -40,7 +53,12 @@ test('renders phase controls for strategy and reset actions', () => {
     expect(screen.getByText(/shortest processing time/i)).toBeInTheDocument();
     expect(screen.getByText(/english/i)).toBeInTheDocument();
     expect(screen.getByText(/balanced/i)).toBeInTheDocument();
+    expect(screen.getByText(/cwl safe/i)).toBeInTheDocument();
     expect(screen.getByText(/resource smoothing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/select village/i)).not.toBeInTheDocument();
+    expect(
+        screen.queryByRole('option', { name: /builder base/i }),
+    ).not.toBeInTheDocument();
     expect(
         screen.queryByRole('option', { name: /time maximization \(lpt\)/i }),
     ).not.toBeInTheDocument();
@@ -78,6 +96,17 @@ test('formats hero-awake conflict warnings for English UI', () => {
 
     expect(formattedMessage).toMatch(/Cannot satisfy this hero-awake rule/i);
     expect(formattedMessage).toMatch(/Dragon Duke/i);
+});
+
+test('formats CWL safe warnings for Chinese UI', () => {
+    const formattedMessage = formatScheduleWarningMessage(
+        'CWLSafeConflict|2026-05-02T00:00:00.000Z|2026-05-12T00:00:00.000Z|Archer_Queen,Grand_Warden',
+        'zh',
+    );
+
+    expect(formattedMessage).toMatch(/CWL 安全窗/);
+    expect(formattedMessage).toMatch(/弓箭女皇|女王|Archer Queen/);
+    expect(formattedMessage).toMatch(/大守护者|Grand Warden/);
 });
 
 test('migrates legacy hero-awake rules into grouped time-point rules', () => {
@@ -124,4 +153,15 @@ test('flattens grouped hero-awake rules for the scheduler', () => {
     expect(flattenedMoments.every((moment) => Number.isFinite(moment.timestamp))).toBe(
         true,
     );
+});
+
+test('normalizes protected heroes for CWL safe strategy', () => {
+    const protectedHeroIds = normalizeCwlSafeProtectedHeroIds([
+        'Grand_Warden',
+        'Grand_Warden',
+        'Archer_Queen',
+        'Unknown_Hero',
+    ]);
+
+    expect(protectedHeroIds).toEqual(['Archer_Queen', 'Grand_Warden']);
 });
