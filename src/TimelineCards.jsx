@@ -1,5 +1,6 @@
 import React from 'react';
 import { getDisplayName } from './displayNames.js';
+import { getUiText } from './uiText.js';
 
 function formatDuration(seconds) {
     const days = Math.floor(seconds / (24 * 60 * 60));
@@ -55,6 +56,7 @@ export function TimelineCards({
     displayLanguage = 'zh',
 }) {
     if (!tasks.length) return null;
+    const text = getUiText(displayLanguage);
 
     // Chronological order
     const sorted = [...tasks].sort((a, b) => a.start - b.start);
@@ -118,10 +120,10 @@ export function TimelineCards({
                                 </h3>
                                 <div className="flex items-center gap-2.5 flex-wrap">
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-400/10 border border-amber-400/20 rounded-lg text-xs font-semibold text-amber-400">
-                                        Level {t.level}
+                                        {text.level} {t.level}
                                     </span>
                                     <span className="text-xs text-dark-400">
-                                        Builder {Number(t.worker) + 1}
+                                        {text.builder} {Number(t.worker) + 1}
                                     </span>
                                     <span className="text-xs text-dark-500">
                                         #{t.iter}
@@ -144,7 +146,7 @@ export function TimelineCards({
                                 <div className="grid grid-cols-2 gap-2.5 mb-3">
                                     <div>
                                         <div className="text-2xs text-dark-400 uppercase tracking-wider font-semibold mb-1">
-                                            Start
+                                            {text.start}
                                         </div>
                                         <div className="flex items-center gap-2 font-mono text-sm text-dark-100">
                                             {startLabel.date && (
@@ -157,7 +159,7 @@ export function TimelineCards({
                                     </div>
                                     <div>
                                         <div className="text-2xs text-dark-400 uppercase tracking-wider font-semibold mb-1">
-                                            End
+                                            {text.end}
                                         </div>
                                         <div className="flex items-center gap-1.5 font-mono text-xs text-dark-100">
                                             {endLabel.date && (
@@ -174,7 +176,7 @@ export function TimelineCards({
 
                         <div className="flex items-center justify-between mb-3">
                             <div className="text-xs text-dark-300">
-                                Duration:{' '}
+                                {text.duration}:{' '}
                                 <span className="font-semibold text-dark-100">
                                     {formatDuration(dur)}
                                 </span>
@@ -187,7 +189,7 @@ export function TimelineCards({
                         {t.objectiveScore !== undefined &&
                             t.objectiveScore !== null && (
                                 <div className="text-xs text-dark-400 mb-3 py-1.5 px-2 bg-dark-800/50 rounded-lg border border-dark-700">
-                                    Optimization Score:{' '}
+                                    {text.optimizationScore}:{' '}
                                     <span className="font-semibold text-amber-300">
                                         {(t.objectiveScore || 0).toFixed(3)}
                                     </span>

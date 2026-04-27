@@ -9,6 +9,7 @@ import CwlSafeInput from './CwlSafeInput.jsx';
 import { validatePlayerJSON, generatePreflight } from './inputValidator.js';
 import { auditMappingCoverage, validateAllConfigs } from './configValidator.js';
 import { getDisplayName, normalizeDisplayLanguage } from './displayNames.js';
+import { getCategoryLabel, getUiText } from './uiText.js';
 import {
     ValidationMessageManager,
     createStickyErrorAlert,
@@ -33,8 +34,10 @@ export function JsonInput({
     onValid,
     onValidityChange,
     storageKey = persistenceKeys.jsonDraft,
+    displayLanguage = 'zh',
 }) {
     const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+    const copy = getUiText(displayLanguage);
 
     const [text, setText] = React.useState(() => {
         try {
@@ -94,7 +97,7 @@ export function JsonInput({
             setText(JSON.stringify(obj, null, 2));
             setError('');
         } catch (e) {
-            setError('Cannot format: ' + e.message);
+            setError(`${copy.cannotFormat}: ${e.message}`);
         }
     };
 
@@ -128,13 +131,13 @@ export function JsonInput({
                     onClick={handleFormat}
                     className="px-3 py-1.5 bg-dark-800 border border-dark-700 hover:border-amber-400/50 text-dark-100 text-xs font-medium rounded-lg transition-all hover:bg-dark-750"
                 >
-                    Format JSON
+                    {copy.formatJson}
                 </button>
                 <button
                     onClick={handleClear}
                     className="px-5 py-2.5 bg-dark-800 border border-dark-700 hover:border-red-500/50 text-dark-100 text-sm font-medium rounded-xl transition-all hover:bg-dark-750"
                 >
-                    Clear
+                    {copy.clear}
                 </button>
 
                 <div className="flex-1"></div>
@@ -149,7 +152,7 @@ export function JsonInput({
                             isValid ? 'bg-amber-400' : 'bg-red-400'
                         }`}
                     ></div>
-                    {isValid ? 'Valid JSON' : 'Invalid JSON'}
+                    {isValid ? copy.validJson : copy.invalidJson}
                 </div>
             </div>
 
@@ -510,6 +513,10 @@ export default function App() {
     const [displayLanguage, setDisplayLanguage] = useState(() => {
         return normalizeDisplayLanguage(persistedSettings.displayLanguage);
     });
+    const text = React.useMemo(
+        () => getUiText(displayLanguage),
+        [displayLanguage],
+    );
     const [heroAwakeConstraints, setHeroAwakeConstraints] = useState(() => {
         return normalizeHeroAwakeConstraints(
             persistedSettings.heroAwakeConstraints,
@@ -680,9 +687,7 @@ export default function App() {
     };
 
     const resetSettings = () => {
-        const confirmed = window.confirm(
-            'Reset schedule settings and active-time preferences? Progress will be kept.',
-        );
+        const confirmed = window.confirm(text.resetSettingsConfirm);
         if (!confirmed) return;
 
         setPreferredStrategy(DEFAULT_STRATEGY_KEY);
@@ -707,9 +712,7 @@ export default function App() {
     };
 
     const resetProgress = () => {
-        const confirmed = window.confirm(
-            'Reset progress for the current player and strategy?',
-        );
+        const confirmed = window.confirm(text.resetProgressConfirm);
         if (!confirmed) return;
 
         const snapshot = [...doneKeys];
@@ -988,34 +991,40 @@ export default function App() {
 
         return [
             {
-                label: 'Strategy',
-                value: strategyMeta?.label || scheduleType,
+                label: text.appliedStrategy,
+                value:
+                    text.strategyLabels?.[scheduleMode] ||
+                    strategyMeta?.label ||
+                    scheduleType,
             },
-            { label: 'Builder Boost', value: `${boostPercent}%` },
+            { label: text.builderBoost, value: `${boostPercent}%` },
             {
-                label: 'Priority Mode',
-                value: priority ? 'Fixed priority map' : 'Dynamic priority',
+                label: text.priorityMode,
+                value: priority ? text.fixedPriorityMap : text.dynamicPriority,
             },
             {
-                label: 'Active Window',
-                value: formatActiveWindowLabel(activeTime),
+                label: text.activeWindow,
+                value: activeTime.enabled
+                    ? formatActiveWindowLabel(activeTime)
+                    : text.allDay,
             },
             {
-                label: 'Hero Awake',
+                label: text.heroAwake,
                 value:
                     activeHeroAwakeRuleCount > 0
-                        ? `${activeHeroAwakeRuleCount} rule${activeHeroAwakeRuleCount > 1 ? 's' : ''}`
-                        : 'None',
+                        ? text.ruleCount(activeHeroAwakeRuleCount)
+                        : text.none,
             },
             {
-                label: 'CWL Safe',
+                label: text.cwlSafe,
                 value:
                     preferredStrategy === 'CWLSafe'
-                        ? `${activeCwlProtectedHeroCount} protected hero${activeCwlProtectedHeroCount > 1 ? 'es' : ''}`
-                        : 'Inactive',
+                        ? text.protectedHeroesCount(activeCwlProtectedHeroCount)
+                        : text.none,
             },
         ];
     }, [
+        text,
         scheduleMode,
         boostPercent,
         priority,
@@ -1095,27 +1104,37 @@ export default function App() {
                     {preflightSummary && (
                         <div className="mb-6 glass-card rounded-2xl p-4 border border-dark-600 bg-dark-800/50">
                             <h3 className="text-xs uppercase tracking-widest text-amber-400 font-bold mb-2">
-                                Validation Summary
+                                {text.validationSummary}
                             </h3>
                             <div className="text-xs text-dark-200 space-y-1">
                                 <div>
                                     ✓ {preflightSummary.totalBuildings}{' '}
-                                    buildings (
+                                    {displayLanguage === 'zh' ? '个建筑' : 'buildings'} (
                                     {preflightSummary.ongoingBuildings}{' '}
-                                    upgrading)
+                                    {displayLanguage === 'zh'
+                                        ? '正在升级'
+                                        : 'upgrading'}
+                                    )
                                 </div>
                                 <div>
-                                    ✓ {preflightSummary.totalHeroes} heroes
+                                    ✓ {preflightSummary.totalHeroes}{' '}
+                                    {displayLanguage === 'zh' ? '个英雄' : 'heroes'}
                                     {preflightSummary.ongoingHeroes > 0
-                                        ? ` (${preflightSummary.ongoingHeroes} upgrading)`
+                                        ? displayLanguage === 'zh'
+                                            ? ` (${preflightSummary.ongoingHeroes} 正在升级)`
+                                            : ` (${preflightSummary.ongoingHeroes} upgrading)`
                                         : ''}
                                 </div>
                                 {preflightSummary.totalGuardians > 0 && (
                                     <div>
                                         ✓ {preflightSummary.totalGuardians}{' '}
-                                        guardians
+                                        {displayLanguage === 'zh'
+                                            ? '个守护者'
+                                            : 'guardians'}
                                         {preflightSummary.ongoingGuardians > 0
-                                            ? ` (${preflightSummary.ongoingGuardians} upgrading)`
+                                            ? displayLanguage === 'zh'
+                                                ? ` (${preflightSummary.ongoingGuardians} 正在升级)`
+                                                : ` (${preflightSummary.ongoingGuardians} upgrading)`
                                             : ''}
                                     </div>
                                 )}
@@ -1131,9 +1150,9 @@ export default function App() {
                                             {Math.round(
                                                 mappingWarnings.coverage,
                                             )}
-                                            % mapping coverage (
+                                            % {text.mappingCoverage} (
                                             {mappingWarnings.unmappedIds.length}{' '}
-                                            unmapped)
+                                            {text.unmapped})
                                         </div>
                                     )}
                             </div>
@@ -1145,14 +1164,15 @@ export default function App() {
                     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr),minmax(320px,1fr)]">
                         <div className="glass-card rounded-2xl p-5 border border-dark-600">
                             <h2 className="text-lg font-bold text-dark-100 mb-4">
-                                Schedule Generator
+                                {text.scheduleGenerator}
                             </h2>
                             <JsonInput
-                                label="Paste village JSON data"
+                                label={text.jsonInputLabel}
                                 storageKey={persistenceKeys.jsonDraft}
                                 initial={exampleVillageData}
                                 onValid={setJsonData}
                                 onValidityChange={setJsonValid}
+                                displayLanguage={displayLanguage}
                             />
                         </div>
 
@@ -1163,10 +1183,10 @@ export default function App() {
                                         htmlFor="strategy-select"
                                         className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-2"
                                     >
-                                        Optimization Strategy
+                                        {text.optimizationStrategy}
                                     </label>
                                     <p className="text-2xs text-dark-500 mb-3">
-                                        Choose how builders are prioritized.
+                                        {text.chooseBuilderPriority}
                                     </p>
                                     <select
                                         id="strategy-select"
@@ -1179,15 +1199,21 @@ export default function App() {
                                         {VISIBLE_STRATEGY_ENTRIES.map(
                                             ([key, meta]) => (
                                                 <option key={key} value={key}>
-                                                    {meta.label}
+                                                    {text.strategyLabels?.[
+                                                        key
+                                                    ] || meta.label}
                                                 </option>
                                             ),
                                         )}
                                     </select>
                                     <p className="text-2xs text-dark-400 mt-2 leading-snug">
                                         {
-                                            STRATEGY_COPY[preferredStrategy]
-                                                .description
+                                            text.strategyDescriptions?.[
+                                                preferredStrategy
+                                            ] ||
+                                                STRATEGY_COPY[
+                                                    preferredStrategy
+                                                ].description
                                         }
                                     </p>
                                 </div>
@@ -1199,7 +1225,7 @@ export default function App() {
                                         htmlFor="display-language-select"
                                         className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-2"
                                     >
-                                        Display Language
+                                        {text.displayLanguage}
                                     </label>
                                     <select
                                         id="display-language-select"
@@ -1220,10 +1246,10 @@ export default function App() {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-2xs uppercase tracking-widest text-amber-400 font-bold">
-                                            Fixed Priority
+                                            {text.fixedPriority}
                                         </p>
                                         <p className="text-2xs text-dark-500">
-                                            Use saved priority map ordering.
+                                            {text.useSavedPriority}
                                         </p>
                                     </div>
                                     <input
@@ -1240,7 +1266,7 @@ export default function App() {
                             <div className="glass-card rounded-2xl p-4 bg-dark-750 border border-dark-700 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-2xs uppercase tracking-widest text-amber-400 font-bold">
-                                        Builder Boost
+                                        {text.builderBoost}
                                     </span>
                                     <span className="text-sm font-black text-amber-300">
                                         {boostPercent}%
@@ -1260,8 +1286,7 @@ export default function App() {
                                     ))}
                                 </select>
                                 <p className="text-2xs text-dark-500">
-                                    Applies a reduction to builder durations in
-                                    5% increments.
+                                    {text.resourceReductionHelp}
                                 </p>
                             </div>
 
@@ -1269,6 +1294,7 @@ export default function App() {
                                 key={`${village}-${activeTimeResetToken}`}
                                 onChange={setActiveTime}
                                 storageKey={persistenceKeys.activeTime(village)}
+                                displayLanguage={displayLanguage}
                             />
 
                             <HeroAwakeInput
@@ -1293,21 +1319,21 @@ export default function App() {
                                     }
                                     className="btn-primary px-6 py-2.5 text-sm font-bold rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
-                                    Generate Schedule
+                                    {text.generateSchedule}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={resetSettings}
                                     className="px-4 py-2 text-xs font-bold rounded-lg border border-dark-600 text-dark-300 hover:text-dark-100 hover:border-amber-400 transition-colors"
                                 >
-                                    Reset Settings
+                                    {text.resetSettings}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={resetProgress}
                                     className="px-4 py-2 text-xs font-bold rounded-lg border border-dark-600 text-dark-300 hover:text-dark-100 hover:border-amber-400 transition-colors"
                                 >
-                                    Reset Progress
+                                    {text.resetProgress}
                                 </button>
                                 {Array.isArray(lastClearedDoneKeys) && (
                                     <button
@@ -1315,7 +1341,7 @@ export default function App() {
                                         onClick={undoResetProgress}
                                         className="px-4 py-2 text-xs font-bold rounded-lg border border-amber-500/50 text-amber-300 hover:text-amber-100 hover:border-amber-400 transition-colors"
                                     >
-                                        Undo Reset Progress
+                                        {text.undoResetProgress}
                                     </button>
                                 )}
                             </div>
@@ -1329,24 +1355,24 @@ export default function App() {
                             <div className="glass-card rounded-2xl p-8 mb-8">
                                 <div className="flex flex-wrap items-center gap-3 mb-4">
                                     <h2 className="text-xl font-bold text-dark-200 flex-1">
-                                        Progress
+                                        {text.progress}
                                     </h2>
                                     {Number.isFinite(
                                         perfStats.generationMs,
                                     ) && (
                                         <span className="px-3 py-1 text-2xs font-bold uppercase tracking-wider text-dark-200 border border-dark-600 rounded-full bg-dark-800/70">
                                             {perfStats.generationMs}ms •{' '}
-                                            {perfStats.taskCount} tasks
+                                            {perfStats.taskCount} {text.tasks}
                                             {Number.isFinite(
                                                 perfStats.iterations,
                                             )
-                                                ? ` • ${perfStats.iterations} iterations`
+                                                ? ` • ${perfStats.iterations} ${text.iterations}`
                                                 : ''}
                                         </span>
                                     )}
                                     {scheduleStale && (
                                         <span className="px-3 py-1 text-2xs font-bold uppercase tracking-wider text-amber-300 border border-amber-400/40 rounded-full bg-amber-400/10">
-                                            Settings changed – rerun to refresh
+                                            {text.rerunToRefresh}
                                         </span>
                                     )}
                                 </div>
@@ -1370,7 +1396,7 @@ export default function App() {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
                                     <div className="glass-card rounded-2xl p-4 bg-dark-750">
                                         <div className="text-2xs uppercase tracking-widest text-amber-400/60 font-bold mb-1.5">
-                                            Completed
+                                            {text.completed}
                                         </div>
                                         <div className="flex items-baseline gap-2">
                                             <span className="text-2xl font-black text-dark-100">
@@ -1386,18 +1412,18 @@ export default function App() {
                                     </div>
                                     <div className="glass-card rounded-2xl p-4 bg-dark-750 border border-dark-600">
                                         <div className="text-2xs uppercase tracking-widest text-amber-400/60 font-bold mb-1.5">
-                                            Remaining
+                                            {text.remaining}
                                         </div>
                                         <div className="text-2xl font-black text-dark-100">
                                             {trackerStats.remaining}
                                         </div>
                                         <div className="text-xs text-dark-400 mt-0.5 uppercase tracking-wider">
-                                            Tasks
+                                            {text.tasks}
                                         </div>
                                     </div>
                                     <div className="glass-card rounded-2xl p-4 bg-dark-750 border border-dark-600">
                                         <div className="text-2xs uppercase tracking-widest text-amber-400/60 font-bold mb-1.5">
-                                            Time Left
+                                            {text.timeLeft}
                                         </div>
                                         <div className="text-2xl font-black text-dark-100">
                                             {formatDuration(
@@ -1419,7 +1445,10 @@ export default function App() {
                                             className="px-3 py-2 bg-dark-750 backdrop-blur-sm border border-dark-600 rounded-lg"
                                         >
                                             <span className="text-amber-400 font-bold text-xs uppercase tracking-wider">
-                                                {label}
+                                                {getCategoryLabel(
+                                                    label,
+                                                    displayLanguage,
+                                                )}
                                             </span>
                                             <span className="text-dark-100 font-black text-sm ml-2">
                                                 {trackerStats.byCategory?.[
@@ -1448,7 +1477,8 @@ export default function App() {
                                                             displayLanguage,
                                                         )}
                                                         <span className="ml-2 px-2.5 py-0.5 bg-amber-400/20 text-amber-400 rounded-lg text-xs font-bold">
-                                                            L{task.level}
+                                                            {text.level}{' '}
+                                                            {task.level}
                                                         </span>
                                                         <span className="ml-2 text-dark-400 text-sm font-medium">
                                                             #{task.iter}
@@ -1458,10 +1488,17 @@ export default function App() {
                                                         <span className="px-2 py-0.5 bg-dark-750 text-amber-400/80 rounded-lg border border-dark-600 font-bold uppercase tracking-wider">
                                                             {getTaskCategory(
                                                                 task.id,
-                                                            )}
+                                                            )
+                                                                ? getCategoryLabel(
+                                                                      getTaskCategory(
+                                                                          task.id,
+                                                                      ),
+                                                                      displayLanguage,
+                                                                  )
+                                                                : ''}
                                                         </span>
                                                         <span className="text-dark-400 font-medium">
-                                                            Builder{' '}
+                                                            {text.builder}{' '}
                                                             {Number(
                                                                 task.worker,
                                                             ) + 1}
@@ -1479,7 +1516,7 @@ export default function App() {
                                                     }
                                                     className="btn-primary px-4 py-2 text-xs font-bold rounded-lg whitespace-nowrap"
                                                 >
-                                                    Mark Done
+                                                    {text.markDone}
                                                 </button>
                                             </div>
                                         </div>
@@ -1490,7 +1527,7 @@ export default function App() {
                                                 ✓
                                             </div>
                                             <p className="text-dark-400 text-sm font-bold uppercase tracking-wider">
-                                                All upgrades complete
+                                                {text.allUpgradesComplete}
                                             </p>
                                         </div>
                                     )}
@@ -1499,13 +1536,13 @@ export default function App() {
 
                             <div className="glass-card rounded-2xl p-5 mb-6">
                                 <h2 className="text-lg font-bold text-dark-100 mb-4">
-                                    Timeline Chart
+                                    {text.timelineChart}
                                 </h2>
 
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="glass-card rounded-2xl px-4 py-2 bg-dark-750 border border-dark-600">
                                         <span className="text-2xs uppercase tracking-widest text-amber-400/50 font-bold mr-2">
-                                            Makespan
+                                            {text.makespan}
                                         </span>
                                         <span className="font-black text-dark-100 text-base">
                                             {makespan}
@@ -1513,12 +1550,14 @@ export default function App() {
                                     </div>
                                     <div className="px-4 py-2 bg-gradient-to-r from-amber-400/15 to-amber-400/15 border border-amber-400/20 rounded-lg">
                                         <span className="font-black text-amber-400 text-sm uppercase tracking-wider">
-                                            {scheduleType}
+                                            {text.strategyLabels?.[
+                                                scheduleMode
+                                            ] || scheduleType}
                                         </span>
                                     </div>
                                 </div>
                                 <p className="text-2xs text-dark-400 mb-2.5 uppercase tracking-wider font-medium">
-                                    Tip: Pinch or Ctrl + Mouse Wheel to zoom
+                                    {text.tipZoom}
                                 </p>
                                 <div className="bg-white rounded-2xl shadow-card-lg overflow-hidden">
                                     <BuilderTimeline
@@ -1535,13 +1574,13 @@ export default function App() {
 
                             <div className="glass-card rounded-2xl p-5 mb-6 border border-dark-600">
                                 <h2 className="text-lg font-bold text-dark-100 mb-4">
-                                    Timeline Cards
+                                    {text.timelineCards}
                                 </h2>
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="glass-card rounded-2xl px-4 py-2 bg-dark-750 border border-dark-600">
                                             <span className="text-2xs uppercase tracking-widest text-amber-400/50 font-bold mr-2">
-                                                Makespan
+                                                {text.makespan}
                                             </span>
                                             <span className="font-black text-dark-100 text-base">
                                                 {makespan}
@@ -1549,7 +1588,9 @@ export default function App() {
                                         </div>
                                         <div className="px-4 py-2 bg-gradient-to-r from-amber-400/15 to-amber-400/15 border border-amber-400/20 rounded-lg">
                                             <span className="font-black text-amber-400 text-sm uppercase tracking-wider">
-                                                {scheduleType}
+                                                {text.strategyLabels?.[
+                                                    scheduleMode
+                                                ] || scheduleType}
                                             </span>
                                         </div>
                                     </div>

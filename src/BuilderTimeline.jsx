@@ -4,6 +4,7 @@ import { DataSet, Timeline } from 'vis-timeline/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import { BUILDING_COLORS } from './colorMap';
 import { getDisplayName } from './displayNames.js';
+import { getUiText } from './uiText.js';
 
 const STYLE_ID = 'gantt-dark-theme';
 
@@ -61,6 +62,7 @@ export default function BuilderTimeline({
     const ref = useRef(null);
     const timelineRef = useRef(null);
     const itemsRef = useRef(null);
+    const text = getUiText(displayLanguage);
 
     useEffect(() => {
         if (document.getElementById(STYLE_ID)) return;
@@ -133,7 +135,7 @@ export default function BuilderTimeline({
         );
         const groups = workers.map((w) => ({
             id: w,
-            content: `<div style="color: #b0b0b0; font-weight: 600; font-size: 13px;">Builder ${Number(w) + 1}</div>`,
+            content: `<div style="color: #b0b0b0; font-weight: 600; font-size: 13px;">${text.builder} ${Number(w) + 1}</div>`,
         }));
 
         const items = tasks.map((t, i) => {
@@ -153,9 +155,9 @@ export default function BuilderTimeline({
             const content = `${label} (${durLabel})`;
 
             // Phase 8: Include objective score in tooltip if available
-            let tooltipText = `${content}${isDone ? ' (done)' : ''}`;
+            let tooltipText = `${content}${isDone ? ` (${text.done})` : ''}`;
             if (t.objectiveScore !== undefined && t.objectiveScore !== null) {
-                tooltipText += `\nObjective Score: ${(t.objectiveScore || 0).toFixed(3)}`;
+                tooltipText += `\n${text.optimizationScore}: ${(t.objectiveScore || 0).toFixed(3)}`;
             }
 
             return {
@@ -246,13 +248,13 @@ export default function BuilderTimeline({
 
             return {
                 id: trackingKey,
-                title: `${content}${isDone ? ' (done)' : ''}`,
+                title: `${content}${isDone ? ` (${text.done})` : ''}`,
                 style: getItemStyle(task, isDone),
             };
         });
 
         itemsRef.current.update(updates);
-    }, [doneKeys, tasks, taskKeyFn, displayLanguage]);
+    }, [doneKeys, tasks, taskKeyFn, displayLanguage, text.done]);
 
     return (
         <div

@@ -1,6 +1,7 @@
 import React from 'react';
 import { getDisplayName } from './displayNames.js';
 import { HOME_HERO_OPTIONS } from './HeroAwakeInput.jsx';
+import { getUiText } from './uiText.js';
 
 export default function CwlSafeInput({
     value = [],
@@ -8,6 +9,7 @@ export default function CwlSafeInput({
     displayLanguage = 'zh',
 }) {
     const selectedHeroIds = Array.isArray(value) ? value : [];
+    const text = getUiText(displayLanguage);
 
     const toggleHero = (heroId) => {
         const nextHeroIds = selectedHeroIds.includes(heroId)
@@ -20,17 +22,16 @@ export default function CwlSafeInput({
         <div className="glass-card rounded-2xl p-4 space-y-3 bg-dark-750 border border-dark-700">
             <div>
                 <label className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-1">
-                    CWL Safe
+                    {text.cwlSafe}
                 </label>
                 <p className="text-2xs text-dark-500">
-                    Protect selected heroes during the monthly CWL safe window
-                    from day 2 00:00 to day 12 00:00.
+                    {text.cwlSafeHelp}
                 </p>
             </div>
 
             <div>
                 <label className="text-2xs text-dark-400 font-semibold uppercase tracking-wider block mb-2">
-                    Protected Heroes
+                    {text.protectedHeroes}
                 </label>
                 <div className="flex flex-wrap gap-2">
                     {HOME_HERO_OPTIONS.map((heroId) => {

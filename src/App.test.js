@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 jest.mock('./BuilderTimeline.jsx', () => () => null);
 
@@ -34,27 +34,27 @@ test('prefills the JSON input with runnable example data on first load', () => {
 test('renders phase controls for strategy and reset actions', () => {
     render(<App />);
 
-    expect(screen.getByText(/schedule generator/i)).toBeInTheDocument();
+    expect(screen.getByText(/计划生成器/i)).toBeInTheDocument();
 
     // Check for strategy dropdown (Phase 8 multi-objective optimization)
     const strategySelect = screen.getByRole('combobox', {
-        name: /optimization strategy/i,
+        name: /优化策略/i,
     });
     expect(strategySelect).toBeInTheDocument();
     expect(strategySelect).toHaveValue('Balanced');
 
     const languageSelect = screen.getByRole('combobox', {
-        name: /display language/i,
+        name: /显示语言/i,
     });
     expect(languageSelect).toBeInTheDocument();
 
     // Verify options include legacy LPT/SPT and new profiles
-    expect(screen.getByText(/longest processing time/i)).toBeInTheDocument();
-    expect(screen.getByText(/shortest processing time/i)).toBeInTheDocument();
+    expect(screen.getByText(/长任务优先/i)).toBeInTheDocument();
+    expect(screen.getByText(/短任务优先/i)).toBeInTheDocument();
     expect(screen.getByText(/english/i)).toBeInTheDocument();
-    expect(screen.getByText(/balanced/i)).toBeInTheDocument();
-    expect(screen.getByText(/cwl safe/i)).toBeInTheDocument();
-    expect(screen.getByText(/resource smoothing/i)).toBeInTheDocument();
+    expect(screen.getByText(/均衡/i)).toBeInTheDocument();
+    expect(screen.getByText(/CWL 安全/i)).toBeInTheDocument();
+    expect(screen.getByText(/资源平滑/i)).toBeInTheDocument();
     expect(screen.queryByText(/select village/i)).not.toBeInTheDocument();
     expect(
         screen.queryByRole('option', { name: /builder base/i }),
@@ -70,10 +70,28 @@ test('renders phase controls for strategy and reset actions', () => {
     ).not.toBeInTheDocument();
 
     expect(
-        screen.getByRole('button', { name: /reset settings/i }),
+        screen.getByRole('button', { name: /重置设置/i }),
     ).toBeInTheDocument();
     expect(
-        screen.getByRole('button', { name: /reset progress/i }),
+        screen.getByRole('button', { name: /重置进度/i }),
+    ).toBeInTheDocument();
+});
+
+test('switches static UI labels between Chinese and English', () => {
+    render(<App />);
+
+    const languageSelect = screen.getByRole('combobox', {
+        name: /显示语言/i,
+    });
+
+    fireEvent.change(languageSelect, { target: { value: 'en' } });
+
+    expect(screen.getByText(/schedule generator/i)).toBeInTheDocument();
+    expect(
+        screen.getByRole('combobox', { name: /optimization strategy/i }),
+    ).toBeInTheDocument();
+    expect(
+        screen.getByRole('button', { name: /generate schedule/i }),
     ).toBeInTheDocument();
 });
 

@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { loadPersisted, savePersisted } from './persistence';
+import { getUiText } from './uiText.js';
 
 export default function ActiveTimeInput({
     onChange,
     defaultStart = '08:00',
     defaultEnd = '22:00',
     storageKey = 'activeTime',
+    displayLanguage = 'zh',
 }) {
+    const text = getUiText(displayLanguage);
     // Load saved values from localStorage (or fallback to defaults)
     const loadFromStorage = () => {
         const saved = loadPersisted(storageKey, null);
@@ -118,7 +121,7 @@ export default function ActiveTimeInput({
         <div className="glass-card rounded-2xl p-4 space-y-3">
             <div>
                 <label className="text-xs font-semibold text-dark-100 uppercase tracking-wider block mb-2.5">
-                    Active Time Range
+                    {text.activeTimeRange}
                 </label>
                 <label className="flex items-center gap-2.5 cursor-pointer group">
                     <input
@@ -128,7 +131,7 @@ export default function ActiveTimeInput({
                         className="w-5 h-5 rounded-lg border-dark-700 bg-dark-800 text-amber-400 focus:ring-2 focus:ring-amber-400/20 focus:ring-offset-2 focus:ring-offset-dark-800 transition-all cursor-pointer"
                     />
                     <span className="text-xs text-dark-200 font-medium group-hover:text-dark-100 transition-colors">
-                        Enable Time Window
+                        {text.enableTimeWindow}
                     </span>
                 </label>
             </div>
@@ -137,7 +140,7 @@ export default function ActiveTimeInput({
                 {/* Start Time */}
                 <div>
                     <label className="text-2xs text-dark-400 font-semibold uppercase tracking-wider block mb-3">
-                        Start Time
+                        {text.startTime}
                     </label>
                     <div className="flex items-center gap-2">
                         <input
@@ -180,7 +183,7 @@ export default function ActiveTimeInput({
                 {/* End Time */}
                 <div>
                     <label className="text-2xs text-dark-400 font-semibold uppercase tracking-wider block mb-3">
-                        End Time
+                        {text.endTime}
                     </label>
                     <div className="flex items-center gap-2">
                         <input

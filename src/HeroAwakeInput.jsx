@@ -1,5 +1,6 @@
 import React from 'react';
 import { getDisplayName } from './displayNames.js';
+import { getUiText } from './uiText.js';
 
 export const HOME_HERO_OPTIONS = [
     'Barbarian_King',
@@ -23,6 +24,7 @@ export default function HeroAwakeInput({
     displayLanguage = 'zh',
 }) {
     const constraints = Array.isArray(value) ? value : [];
+    const text = getUiText(displayLanguage);
 
     const updateConstraint = (index, nextPatch) => {
         const nextConstraints = constraints.map((constraint, constraintIndex) =>
@@ -61,10 +63,10 @@ export default function HeroAwakeInput({
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <label className="text-2xs uppercase tracking-widest text-amber-400 font-bold block mb-1">
-                        Hero Awake Time
+                        {text.heroAwakeTime}
                     </label>
                     <p className="text-2xs text-dark-500">
-                        Pick a time, then choose which heroes must be awake.
+                        {text.heroAwakeHelp}
                     </p>
                 </div>
                 <button
@@ -72,13 +74,13 @@ export default function HeroAwakeInput({
                     onClick={addConstraint}
                     className="px-3 py-1.5 text-xs font-bold rounded-lg border border-dark-600 text-dark-300 hover:text-dark-100 hover:border-amber-400 transition-colors"
                 >
-                    Add
+                    {text.add}
                 </button>
             </div>
 
             {constraints.length === 0 ? (
                 <div className="text-2xs text-dark-500 border border-dashed border-dark-600 rounded-xl px-3 py-3">
-                    No hero awake rules yet.
+                    {text.noHeroAwakeRules}
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -95,7 +97,7 @@ export default function HeroAwakeInput({
                                 <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr),auto] gap-3 items-end">
                                     <div>
                                         <label className="text-2xs text-dark-400 font-semibold uppercase tracking-wider block mb-2">
-                                            Must Be Awake At
+                                            {text.mustBeAwakeAt}
                                         </label>
                                         <input
                                             type="datetime-local"
@@ -114,13 +116,13 @@ export default function HeroAwakeInput({
                                         onClick={() => removeConstraint(index)}
                                         className="px-3 py-2 text-xs font-bold rounded-lg border border-dark-600 text-dark-300 hover:text-red-300 hover:border-red-400 transition-colors"
                                     >
-                                        Remove
+                                        {text.remove}
                                     </button>
                                 </div>
 
                                 <div>
                                     <label className="text-2xs text-dark-400 font-semibold uppercase tracking-wider block mb-2">
-                                        Heroes
+                                        {text.heroes}
                                     </label>
                                     <div className="flex flex-wrap gap-2">
                                         {HOME_HERO_OPTIONS.map((heroId) => {
